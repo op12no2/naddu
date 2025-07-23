@@ -1,2 +1,2 @@
-# naddu
-A UCI chess engine with MCTS-like search
+# Naddu
+A UCI chess engine with MCTS-like search. WIP.
