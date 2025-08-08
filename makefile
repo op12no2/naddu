@@ -1,11 +1,20 @@
 
-CC      = clang
-CFLAGS  = -O3 -march=native -Wall -Wextra 
-LDFLAGS = -flto
-TARGET  = naddu
+CC       = clang
+TARGET   = naddu
+BUILD    ?= debug
 
-SRCS    = naddu.c
-OBJS    = $(SRCS:.c=.o)
+SRCS     = naddu.c
+OBJS     = $(SRCS:.c=.o)
+
+ifeq ($(BUILD),release)
+  CFLAGS  = -O3 -march=native -flto -DNDEBUG
+  LDFLAGS = -flto -s
+else ifeq ($(BUILD),debug)
+  CFLAGS  = -O0 -g -Wall -Wextra
+  LDFLAGS =
+else
+  $(error Unknown BUILD type: $(BUILD))
+endif
 
 .PHONY: all clean
 
@@ -19,4 +28,6 @@ $(TARGET): $(OBJS)
 
 clean:
 	rm -f $(TARGET) $(OBJS)
+
+
 
