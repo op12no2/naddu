@@ -236,16 +236,16 @@ static inline double get_ms() {
 /*}}}*/
 /*{{{  shift*/
 
-//static inline uint64_t shift(const uint64_t bb, const int n) {
-  //return n > 0 ? bb << n : bb >> -n;
-//}
-
-static inline __attribute__((always_inline)) uint64_t shift(uint64_t bb, int n) {
-  const uint64_t left  = bb << (n & 63);         // if n = 0
-  const uint64_t right = bb >> ((-n) & 63);      // if n < 0
-  const uint64_t mask = -(n >= 0);               // 0xFFFFFFFFFFFFFFFF if n = 0, else 0
-  return (left & mask) | (right & ~mask);  // select branchlessly
+static inline __attribute__((always_inline)) uint64_t shift(const uint64_t bb, const int n) {
+  return n > 0 ? bb << n : bb >> -n;
 }
+
+//static inline __attribute__((always_inline)) uint64_t shift(uint64_t bb, int n) {
+//  const uint64_t left  = bb << (n & 63);
+//  const uint64_t right = bb >> ((-n) & 63);
+//  const uint64_t mask = -(n >= 0);
+//  return (left & mask) | (right & ~mask);
+//}
 
 /*}}}*/
 /*{{{  popcount*/
@@ -420,7 +420,7 @@ static void print_board(const Position *pos) {
 
 /*{{{  magic_index*/
 
-static inline int magic_index(const uint64_t blockers, const uint64_t magic, const int shift) {
+static inline __attribute__((always_inline)) int magic_index(const uint64_t blockers, const uint64_t magic, const int shift) {
 
   return (int)((blockers * magic) >> shift);
 
@@ -713,7 +713,6 @@ static void init_rook_attacks(void) {
       uint64_t blocker = blockers[i];
       uint64_t attack = 0;
       
-      // North
       for (int r = rank + 1; r <= 7; r++) {
         int s = r * 8 + file;
         attack |= 1ULL << s;
@@ -722,7 +721,6 @@ static void init_rook_attacks(void) {
         }
       }
       
-      // South
       for (int r = rank - 1; r >= 0; r--) {
         int s = r * 8 + file;
         attack |= 1ULL << s;
@@ -731,7 +729,6 @@ static void init_rook_attacks(void) {
         }
       }
       
-      // East
       for (int f = file + 1; f <= 7; f++) {
         int s = rank * 8 + f;
         attack |= 1ULL << s;
@@ -740,7 +737,6 @@ static void init_rook_attacks(void) {
         }
       }
       
-      // West
       for (int f = file - 1; f >= 0; f--) {
         int s = rank * 8 + f;
         attack |= 1ULL << s;
@@ -889,19 +885,23 @@ static inline int is_attacked(const Position * __restrict pos, int sq, const int
   if (pos->all[piece_index(KING, opp)] & king_attacks[sq])
     return 1;
 
-  Attack *a = &bishop_attacks[sq];
-  uint64_t blockers = pos->occupied & a->mask;
-  int idx = magic_index(blockers, a->magic, a->shift);
-  uint64_t attacks = a->attacks[idx];
-  if (attacks & (pos->all[piece_index(BISHOP, opp)] | pos->all[piece_index(QUEEN, opp)]))
-    return 1;
+  {
+    const Attack *a = &bishop_attacks[sq];
+    const uint64_t blockers = pos->occupied & a->mask;
+    const int idx = magic_index(blockers, a->magic, a->shift);
+    const uint64_t attacks = a->attacks[idx];
+    if (attacks & (pos->all[piece_index(BISHOP, opp)] | pos->all[piece_index(QUEEN, opp)]))
+      return 1;
+  }
 
-  a = &rook_attacks[sq];
-  blockers = pos->occupied & a->mask;
-  idx = magic_index(blockers, a->magic, a->shift);
-  attacks = a->attacks[idx];
-  if (attacks & (pos->all[piece_index(ROOK, opp)] | pos->all[piece_index(QUEEN, opp)]))
-    return 1;
+  {
+    const Attack *a = &rook_attacks[sq];
+    const uint64_t blockers = pos->occupied & a->mask;
+    const int idx = magic_index(blockers, a->magic, a->shift);
+    const uint64_t attacks = a->attacks[idx];
+    if (attacks & (pos->all[piece_index(ROOK, opp)] | pos->all[piece_index(QUEEN, opp)]))
+      return 1;
+  }
 
   return 0;
 
@@ -947,6 +947,7 @@ static inline void gen_sliders(Node *node, Attack *attack_table, const int piece
 /*{{{  gen_jumpers*/
 
 // hack scope to parallelise k and n
+// and/or not move k next to k - can optimise is_attacked as well then and gen_castling
 
 static inline void gen_jumpers(Node *node, const uint64_t *attack_table, const int piece) {
 
@@ -996,88 +997,94 @@ static void gen_pawns(Node *node) {
   const uint64_t opp_king = pos->all[piece_index(KING, opp)];
 
   /*{{{  push 1*/
+  {
+    const int offset = orth_offset[stm];
+    const uint64_t bb = shift(pawns, offset) & ~occupied;
   
-  int offset = orth_offset[stm];
-  uint64_t bb = shift(pawns, offset) & ~occupied;
-  uint64_t quiet_bb = bb & ~RANK_PROMO;
-  uint64_t promo_bb = bb & RANK_PROMO;
+    uint64_t quiet_bb = bb & ~RANK_PROMO;
+    uint64_t promo_bb = bb & RANK_PROMO;
   
-  while (quiet_bb) {
-    const int to = bsf(quiet_bb);
-    quiet_bb &= quiet_bb - 1;
-    node->moves[node->num_moves++] = encode_move(to - offset, to, 0);
-  }
+    while (quiet_bb) {
+      const int to = bsf(quiet_bb);
+      quiet_bb &= quiet_bb - 1;
+      node->moves[node->num_moves++] = encode_move(to - offset, to, 0);
+    }
   
-  while (promo_bb) {
-    const int to = bsf(promo_bb);
-    promo_bb &= promo_bb - 1;
-    node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_Q_PROMO);
-    node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_R_PROMO);
-    node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_B_PROMO);
-    node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_N_PROMO);
+    while (promo_bb) {
+      const int to = bsf(promo_bb);
+      promo_bb &= promo_bb - 1;
+      node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_Q_PROMO);
+      node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_R_PROMO);
+      node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_B_PROMO);
+      node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_N_PROMO);
+    }
   }
   
   /*}}}*/
   /*{{{  push 2*/
+  {
+    int offset = orth_offset[stm];
+    uint64_t bb = pawns & home_rank[stm];
+    bb = shift(bb, offset) & ~occupied;
+    bb = shift(bb, offset) & ~occupied;
   
-  bb = pawns & home_rank[stm];
-  bb = shift(bb, offset) & ~occupied;
-  bb = shift(bb, offset) & ~occupied;
+    offset += offset;
   
-  offset += offset;
-  
-  while (bb) {
-    const int to = bsf(bb);
-    bb &= bb - 1;
-    node->moves[node->num_moves++] = encode_move(to - offset, to, FLAG_PAWN_PUSH);
+    while (bb) {
+      const int to = bsf(bb);
+      bb &= bb - 1;
+      node->moves[node->num_moves++] = encode_move(to - offset, to, FLAG_PAWN_PUSH);
+    }
   }
   
   /*}}}*/
   /*{{{  left*/
+  {
+    const int offset = left_offset[stm];
+    const uint64_t bb = shift(pawns, offset) & enemies & NOT_H_FILE & ~opp_king;
   
-  offset = left_offset[stm];
-  bb = shift(pawns, offset) & enemies & NOT_H_FILE & ~opp_king;
-  quiet_bb = bb & ~RANK_PROMO;
-  promo_bb = bb & RANK_PROMO;
+    uint64_t quiet_bb = bb & ~RANK_PROMO;
+    uint64_t promo_bb = bb & RANK_PROMO;
   
-  while (quiet_bb) {
-    const int to = bsf(quiet_bb);
-    quiet_bb &= quiet_bb - 1;
-    node->moves[node->num_moves++] = encode_move(to - offset, to, 0);
-  }
+    while (quiet_bb) {
+      const int to = bsf(quiet_bb);
+      quiet_bb &= quiet_bb - 1;
+      node->moves[node->num_moves++] = encode_move(to - offset, to, 0);
+    }
   
-  while (promo_bb) {
-    const int to = bsf(promo_bb);
-    promo_bb &= promo_bb - 1;
-    node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_Q_PROMO);
-    node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_R_PROMO);
-    node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_B_PROMO);
-    node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_N_PROMO);
+    while (promo_bb) {
+      const int to = bsf(promo_bb);
+      promo_bb &= promo_bb - 1;
+      node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_Q_PROMO);
+      node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_R_PROMO);
+      node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_B_PROMO);
+      node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_N_PROMO);
+    }
   }
   
   /*}}}*/
   /*{{{  right*/
+  {
+    const int offset = right_offset[stm];
+    const uint64_t bb = shift(pawns, offset) & enemies & NOT_A_FILE & ~opp_king;
   
-  // hack scope to parallelise with left
+    uint64_t quiet_bb = bb & ~RANK_PROMO;
+    uint64_t promo_bb = bb & RANK_PROMO;
   
-  offset = right_offset[stm];
-  bb = shift(pawns, offset) & enemies & NOT_A_FILE & ~opp_king;
-  quiet_bb = bb & ~RANK_PROMO;
-  promo_bb = bb & RANK_PROMO;
+    while (quiet_bb) {
+      const int to = bsf(quiet_bb);
+      quiet_bb &= quiet_bb - 1;
+      node->moves[node->num_moves++] = encode_move(to - offset, to, 0);
+    }
   
-  while (quiet_bb) {
-    const int to = bsf(quiet_bb);
-    quiet_bb &= quiet_bb - 1;
-    node->moves[node->num_moves++] = encode_move(to - offset, to, 0);
-  }
-  
-  while (promo_bb) {
-    const int to = bsf(promo_bb);
-    promo_bb &= promo_bb - 1;
-    node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_Q_PROMO);
-    node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_R_PROMO);
-    node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_B_PROMO);
-    node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_N_PROMO);
+    while (promo_bb) {
+      const int to = bsf(promo_bb);
+      promo_bb &= promo_bb - 1;
+      node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_Q_PROMO);
+      node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_R_PROMO);
+      node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_B_PROMO);
+      node->moves[node->num_moves++] = encode_move(to - offset, to, MASK_N_PROMO);
+    }
   }
   
   /*}}}*/
@@ -1085,7 +1092,7 @@ static void gen_pawns(Node *node) {
   if (pos->ep) {
     /*{{{  ep*/
     
-    bb = pawn_attacks[stm][pos->ep] & pawns;
+    uint64_t bb = pawn_attacks[stm][pos->ep] & pawns;
     
     while (bb) {
       const int from = bsf(bb);
@@ -1101,7 +1108,7 @@ static void gen_pawns(Node *node) {
 /*}}}*/
 /*{{{  gen_castling*/
 
-//hack optimise/generalise
+// hack optimise/generalise
 
 static void gen_castling(Node *node) {
 
@@ -1246,7 +1253,7 @@ static void make_move(Position * __restrict pos, const uint64_t move) {
   if (move & MASK_SPECIAL) {
     /*{{{  specials*/
     
-    // hack - use an indirect fun call? measure it - maybe different make_move versions
+    // hack - use an indirect func call? measure it - maybe different make_move versions
     
     if (move & FLAG_PROMO) {
       /*{{{  promo*/
@@ -1477,7 +1484,6 @@ static int uci_tokens(int n, char **tokens) {
     /*{{{  perft tests*/
     
     const int num_tests = 64;
-    //const int num_tests = 14;
     
     double start = get_ms();
     
