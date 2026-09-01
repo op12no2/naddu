@@ -1722,31 +1722,6 @@ function go() {
 
 const searchNodes = Array(MAX_PLY);
 
-function bf() {
-
-  newGame();
-  position(STARTPOS);
-  
-  const depth = 9;
-  let totalBf = 0;
-  
-  for (let d = 1; d <= depth; d++) {
-    tcClear();
-    const score = search(d, 0, -Infinity, Infinity);
-    const nodes = timeControl.nodes;
-    searchNodes[d] = nodes;
-    if (d > 1) {
-      const thisBf = searchNodes[d] / searchNodes[d-1];
-      totalBf += thisBf;
-      const meanBf = totalBf / (d - 1);
-      uciWrite(`depth ${d} nodes ${searchNodes[d]} bf ${thisBf.toFixed(1)} mean ${meanBf.toFixed(1)}`);
-    }  
-    else
-      uciWrite(`depth ${d} nodes ${searchNodes[d]}`);
-  }
-
-}
-
 // uses the move iterator and tt to exercise them.
 // it also compares the incremental hash to a rebuilt hash
 
@@ -2022,10 +1997,6 @@ function execTokens(tokens) {
       go();
       break;  
 
-    case 'bf':
-      bf();
-      break;  
-
     case 'isready':
       uciWrite('readyok');  
       break;
@@ -2084,7 +2055,7 @@ function execTokens(tokens) {
       break;
 
     case 'bench':
-    case 'bn':
+    case 'h':
       bench();
       break;
 
