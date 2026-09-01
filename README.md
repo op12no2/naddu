@@ -21,4 +21,4 @@ naddu.postMessage('go depth 8');
 naddu.postMessage('go movetime 1000')
 ```
 
-Try the example code [naddu.html](here).
+Try the example code [op12no2.github.io/naddu/naddu.html](here).
