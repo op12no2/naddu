@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Naddu</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 60em;
+    margin: 2em auto;
+    padding: 0 1em;
+  }
+  pre, code, textarea, input {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 14px;
+  }
+  pre {
+    background: #f4f4f4;
+    padding: 1em;
+    overflow-x: auto;
+  }
+  #ucioutput {
+    height: 24em;
+    overflow-y: auto;
+    white-space: pre;
+  }
+</style>
+</head>
+<body>
+
+<pre id="ucioutput"></pre>
+
+<script>
+const naddu = new Worker('naddu.js');
+const ucioutput = document.getElementById('ucioutput');
+
+naddu.onmessage = function(e) {
+  ucioutput.textContent += e.data + '\n'; // naddu reponds with text as per UCI
+  ucioutput.scrollTop = ucioutput.scrollHeight;
+};
+
+naddu.postMessage('uci');
+naddu.postMessage('ucinewgame');
+naddu.postMessage('position startpos');
+naddu.postMessage('board');
+naddu.postMessage('eval');
+naddu.postMessage('go depth 8');
+naddu.postMessage('go movetime 1000')
+
+</script>
+
+</body>
+</html>
