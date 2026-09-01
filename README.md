@@ -22,3 +22,25 @@ naddu.postMessage('go movetime 1000')
 ```
 
 Try the example code: https://op12no2.github.io/naddu/naddu.html
+
+Naddu can also be started from a command line using `Node` or `Bun`:-
+
+```
+node naddu.js
+```
+
+Or give it commands:-
+
+```
+bun naddu.js uci ucinewgame "position startpos" "go depth 8"
+```
+
+You can create executables using `Bun`:-
+
+```
+bun build naddu.js --compile --minify --target=bun-windows-x64  --outfile=naddu-win-x64
+bun build naddu.js --compile --minify --target=bun-linux-x64    --outfile=naddu-linux-x64
+bun build naddu.js --compile --minify --target=bun-darwin-x64   --outfile=naddu-mac-x64
+bun build naddu.js --compile --minify --target=bun-darwin-arm64 --outfile=naddu-mac-arm64
+```
+
