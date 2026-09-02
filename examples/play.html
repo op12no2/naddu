@@ -54,6 +54,13 @@
 <div id="controls">
   <label>White <select id="white"><option>You</option><option>Naddu</option></select></label>
   <label>Black <select id="black"><option>You</option><option selected>Naddu</option></select></label>
+  <label>Strength <select id="strength">
+    <option value="depth 1">1 - one ply</option>
+    <option value="nodes 500">2 - 500 nodes</option>
+    <option value="nodes 5000">3 - 5000 nodes</option>
+    <option value="nodes 50000">4 - 50000 nodes</option>
+    <option value="movetime" selected>5 - full</option>
+  </select></label>
   <label>Movetime <input id="movetime" type="number" value="1000" min="10" step="100" style="width:5em"> ms</label>
   <button id="new">New game</button>
 </div>
@@ -136,7 +143,9 @@ function next() {
   if (player(stm) === 'Naddu') {
     thinking = true;
     draw();
-    naddu.postMessage('go movetime ' + document.getElementById('movetime').value);
+    // weaker levels limit the search by depth or nodes instead of time
+    const strength = document.getElementById('strength').value;
+    naddu.postMessage('go ' + (strength === 'movetime' ? 'movetime ' + document.getElementById('movetime').value : strength));
   }
 }
 
