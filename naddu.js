@@ -24,6 +24,10 @@ const RIGHTS_q = 8;
 
 const STARTPOS = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
+//
+// the board is 0x88 https://www.chessprogramming.org/0x88
+//
+
 class Pos {
 
   constructor() {
@@ -197,6 +201,10 @@ function nodeInitOnce() {
   }
 }
 
+//
+// xorshift32 generator for the zobrist keys https://www.chessprogramming.org/Pseudorandom_Number_Generator
+//
+
 let rand32Seed = 1234567890;
 
 function rand32() {
@@ -205,6 +213,10 @@ function rand32() {
   rand32Seed ^= rand32Seed << 5;
   return rand32Seed >>> 0;
 }
+
+//
+// zobrist hashing, 2 x 32 bit keys https://www.chessprogramming.org/Zobrist_Hashing
+//
 
 const zobBlackLo = rand32();
 const zobBlackHi = rand32();
@@ -273,7 +285,7 @@ function zobRebuild(pos) {
 
 }
 
-// Repetition detection using flat history array
+// Repetition detection using flat history array https://www.chessprogramming.org/Repetitions
 // Stores [hashLo, hashHi] pairs for each position
 
 const REP_MAX = 1024;
@@ -313,6 +325,7 @@ function isRepetition(pos, ply) {
   return false;
 }
 
+// https://www.chessprogramming.org/Fifty-move_Rule
 function isFiftyMoves(pos) {
   return pos.hmc >= 100;
 }
@@ -327,6 +340,10 @@ function repRecord(pos, ply) {
   repHistory[idx] = pos.hashLo;
   repHistory[idx + 1] = pos.hashHi;
 }
+
+//
+// transposition table, always replace https://www.chessprogramming.org/Transposition_Table
+//
 
 const TT_EXACT = 1;
 const TT_ALPHA = 2;
@@ -409,6 +426,10 @@ function ttScoreFromTT(score, ply) {
   return score;
 }
 
+//
+// piece-to history heuristic for ordering quiet moves https://www.chessprogramming.org/History_Heuristic
+//
+
 const pieceHistory = [];
 const HISTORY_MAX = 32767 - MAX_PLY * MAX_PLY;
 
@@ -451,6 +472,10 @@ function addHistory(pos, move, depth) {
   }
 }
 
+//
+// one killer move per ply https://www.chessprogramming.org/Killer_Heuristic
+//
+
 function killersClear() {
   for (let i = 0; i < MAX_PLY; i++) {
     nodes[i].killer = 0;
@@ -463,6 +488,7 @@ function killerSet(node, move) {
   node.killer = move;
 }
 
+// https://www.chessprogramming.org/Square_Attacked_By
 function isAttacked(pos, sq, byColor) {
   const board = pos.board;
 
@@ -522,11 +548,19 @@ function isAttacked(pos, sq, byColor) {
   return 0;
 }
 
+//
+// pseudo-legal move generation, legality is checked after makeMove https://www.chessprogramming.org/Pseudo-Legal_Move
+//
+
 function genMoves(node) {
   node.numMoves = 0;
   genCaptures(node);
   genQuiets(node);
 }
+
+//
+// move encoding: (from << 8) | to | flags https://www.chessprogramming.org/Encoding_Moves
+//
 
 const MOVE_FLAG_CAPTURE    = 0x10000;
 const MOVE_FLAG_EPMAKE     = 0x20000;
@@ -811,6 +845,11 @@ function genQuiets(node) {
   node.numMoves = numMoves;
 }
 
+//
+// staged move ordering: tt move, captures by MVV-LVA, killer then history for quiets, picked by selection sort
+// https://www.chessprogramming.org/Move_Ordering
+//
+
 const STAGE_TT          = 0;
 const STAGE_GEN_CAPTURE = 1;
 const STAGE_CAPTURE     = 2;
@@ -818,6 +857,7 @@ const STAGE_GEN_QUIET   = 3;
 const STAGE_QUIET       = 4;
 const STAGE_DONE        = 5;
 
+// https://www.chessprogramming.org/MVV-LVA
 function rankCaptures(node) {
   const pos = node.pos;
   const board = pos.board;
@@ -1039,6 +1079,10 @@ RIGHTS_MASK[0x77] = 0xF ^ RIGHTS_k;
 RIGHTS_MASK[0x04] = 0xF ^ RIGHTS_K ^ RIGHTS_Q;
 RIGHTS_MASK[0x74] = 0xF ^ RIGHTS_k ^ RIGHTS_q;
 
+//
+// make move with incremental zobrist update, no unmake - positions are copied https://www.chessprogramming.org/Incremental_Updates
+//
+
 function makeMove(move, pos) {
 
   const from = (move >> 8) & 0xff;
@@ -1211,6 +1255,9 @@ const counts = new Uint8Array(16);
 
 //
 // evaluate() uses PESTO values https://chessprogramming.org/PeSTO%27s_Evaluation_Function
+// i.e. material and piece-square tables https://www.chessprogramming.org/Piece-Square_Tables
+// with a tapered eval https://www.chessprogramming.org/Tapered_Eval
+// and a check for insufficient material https://www.chessprogramming.org/Draw_Evaluation
 //
 
 function evaluate(node) {
@@ -1476,6 +1523,7 @@ function tcCheck() {
     tc.finished = 1;
 }
 
+// https://www.chessprogramming.org/Time_Management
 function tcInit(tokens) {
 
   tcClear();
@@ -1557,6 +1605,10 @@ function tcInit(tokens) {
 
 }
 
+//
+// quiescence search, captures only, with stand pat https://www.chessprogramming.org/Quiescence_Search
+//
+
 function qsearch(ply, alpha, beta) {
 
   if (ply === MAX_PLY - 1)
@@ -1631,6 +1683,12 @@ function qsearch(ply, alpha, beta) {
 
 }
 
+//
+// negamax alpha-beta with principal variation search
+// https://www.chessprogramming.org/Negamax https://www.chessprogramming.org/Alpha-Beta https://www.chessprogramming.org/Principal_Variation_Search
+//
+
+// mate scores are MATE - ply so shorter mates score higher https://www.chessprogramming.org/Checkmate
 const MATE = 10000;
 
 function search(depth, ply, alpha, beta) {
@@ -1650,6 +1708,7 @@ function search(depth, ply, alpha, beta) {
   const nstm = pos.stm ^ BLACK;
   const inCheck = isAttacked(pos, pos.kings[stmi], nstm);
 
+  // in check at depth 0 stays in search rather than qsearch https://www.chessprogramming.org/Check_Extensions
   if (!inCheck && depth <= 0)
     return qsearch(ply, alpha, beta);
 
@@ -1683,11 +1742,12 @@ function search(depth, ply, alpha, beta) {
   if (!isRoot && (node.draw || isDraw(pos, ply)))
     return 0;
 
-  // beta pruning
+  // beta pruning aka reverse futility pruning https://www.chessprogramming.org/Reverse_Futility_Pruning
   if (!isPV && !inCheck && depth <=  8 && beta < TT_MATE_BOUND && (ev - depth * 100) >= beta)
     return ev;
 
-  // null move pruning - counts[] is still valid from evaluate() above
+  // null move pruning https://www.chessprogramming.org/Null_Move_Pruning
+  // counts[] is still valid from evaluate() above
   if (!isPV && !inCheck && !node.noNull && depth >= 2 && ev >= beta && beta < TT_MATE_BOUND
       && (counts[KNIGHT | pos.stm] + counts[BISHOP | pos.stm] + counts[ROOK | pos.stm] + counts[QUEEN | pos.stm]) > 0) {
     posSet(nextPos, pos);
@@ -1726,7 +1786,15 @@ function search(depth, ply, alpha, beta) {
       score = -search(depth - 1, ply + 1, -beta, -alpha);
     }
     else {
-      score = -search(depth - 1, ply + 1, -alpha - 1, -alpha);
+      // late move reductions https://www.chessprogramming.org/Late_Move_Reductions
+      // late quiet non-killer moves get a reduced null window search first
+      let r = 0;
+      if (depth >= 3 && numMoves > 3 && !inCheck && move !== node.killer && !(move & (MOVE_FLAG_CAPTURE | MOVE_PROMO_MASK)))
+        r = numMoves > 12 ? 2 : 1;
+      score = -search(depth - 1 - r, ply + 1, -alpha - 1, -alpha);
+      if (r && tc.finished === 0 && score > alpha) {
+        score = -search(depth - 1, ply + 1, -alpha - 1, -alpha);
+      }
       if (tc.finished === 0 && score > alpha && score < beta) {
         score = -search(depth - 1, ply + 1, -beta, -alpha);
       }
@@ -1766,7 +1834,7 @@ function search(depth, ply, alpha, beta) {
 
 }
 
-// node.pv = move followed by child's pv
+// node.pv = move followed by child's pv https://www.chessprogramming.org/Triangular_PV-Table
 function pvCopy(node, child, move) {
   const pv = node.pv;
   const childPV = child.pv;
@@ -1798,6 +1866,7 @@ function newGame() {
   repClear();
 }
 
+// https://www.chessprogramming.org/Iterative_Deepening
 function go() {
 
   const tc = timeControl;
@@ -1827,6 +1896,7 @@ const searchNodes = Array(MAX_PLY);
 
 const TT_PERFT = 4;
 
+// https://www.chessprogramming.org/Perft
 function perft (depth, ply) {
 
   if (ply === 0)
@@ -2076,6 +2146,10 @@ function execString (cmd) {
     execTokens(tokens);
   }
 }
+
+//
+// uci https://www.chessprogramming.org/UCI https://backscattering.de/chess/uci/
+//
 
 function execTokens(tokens) {
   switch (tokens[0]) {
