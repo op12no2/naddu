@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Naddu openings</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 70em;
+    margin: 2em auto;
+    padding: 0 1em;
+  }
+  #controls label {
+    margin-right: 1em;
+  }
+  #boards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1em;
+    margin: 1em 0;
+  }
+  .game {
+    width: 192px;
+  }
+  .board {
+    display: grid;
+    grid-template-columns: repeat(8, 24px);
+    grid-template-rows: repeat(8, 24px);
+    border: 1px solid #444;
+  }
+  .sq {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    line-height: 1;
+  }
+  .light { background: #eed; }
+  .dark { background: #997; }
+  .caption {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 14px;
+    margin: 0.3em 0;
+    white-space: pre;
+  }
+  #summary {
+    font-weight: bold;
+  }
+  pre {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Openings</h1>
+
+<p>Twenty workers, one for each legal first move. Each plays itself for a few moves and then the boards are sorted by
+Naddu's eval, so the top left is the first move Naddu likes best.</p>
+
+<div id="controls">
+  <label>Nodes per move <select id="nodes">
+    <option>2000</option>
+    <option selected>10000</option>
+    <option>50000</option>
+  </select></label>
+  <label>Moves <input id="plies" type="number" value="10" min="1" max="40" style="width:4em"></label>
+  <button id="start">Start</button>
+</div>
+
+<div id="boards"></div>
+
+<p id="summary"></p>
+
+<pre id="results"></pre>
+
+<script>
+const PIECES = {
+  K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙',
+  k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟',
+  '.': ''
+};
+
+const FIRST_MOVES = [
+  'a2a3', 'a2a4', 'b2b3', 'b2b4', 'c2c3', 'c2c4', 'd2d3', 'd2d4', 'e2e3', 'e2e4',
+  'f2f3', 'f2f4', 'g2g3', 'g2g4', 'h2h3', 'h2h4', 'b1a3', 'b1c3', 'g1f3', 'g1h3'
+];
+
+const boardsEl = document.getElementById('boards');
+const summaryEl = document.getElementById('summary');
+const resultsEl = document.getElementById('results');
+
+let games = [];
+let finished = 0;
+
+function makeGame(first) {
+  const el = document.createElement('div');
+  el.className = 'game';
+  const board = document.createElement('div');
+  board.className = 'board';
+  for (let rank = 8; rank >= 1; rank--) {
+    for (let file = 0; file < 8; file++) {
+      const sq = document.createElement('div');
+      sq.className = 'sq ' + ((rank + file) % 2 ? 'dark' : 'light');
+      board.appendChild(sq);
+    }
+  }
+  const caption = document.createElement('div');
+  caption.className = 'caption';
+  caption.textContent = first;
+  el.appendChild(caption);
+  el.appendChild(board);
+  boardsEl.appendChild(el);
+  return {first: first, moves: [first], el: el, board: board, caption: caption, score: null, final: false, worker: null};
+}
+
+function show(game, rows) {
+  const squares = game.board.children;
+  for (let r = 0; r < 8; r++) {
+    for (let f = 0; f < 8; f++)
+      squares[r * 8 + f].textContent = PIECES[rows[r][f]];
+  }
+}
+
+function step(game) {
+  game.worker.postMessage('position startpos moves ' + game.moves.join(' '));
+  game.worker.postMessage('board');
+  game.worker.postMessage('moves');
+}
+
+function search(game) {
+  game.worker.postMessage('go nodes ' + document.getElementById('nodes').value);
+}
+
+function finish(game, score) {
+  game.score = score;
+  game.caption.textContent = game.first + '  ' + (score > 0 ? '+' : '') + score;
+  game.worker.terminate();
+  game.worker = null;
+  finished++;
+  if (finished === games.length)
+    rank();
+}
+
+function rank() {
+  games.sort(function(a, b) { return b.score - a.score; });
+  let text = '';
+  for (let i = 0; i < games.length; i++) {
+    const g = games[i];
+    g.caption.textContent = (i + 1) + '. ' + g.first + '  ' + (g.score > 0 ? '+' : '') + g.score;
+    boardsEl.appendChild(g.el); // re-append in ranked order
+    text += g.caption.textContent + '  ' + g.moves.join(' ') + '\n';
+  }
+  resultsEl.textContent = text;
+  summaryEl.textContent = 'Naddu likes ' + games[0].first + ' best and ' + games[games.length - 1].first + ' least';
+}
+
+function onMessage(game, line) {
+  const row = line.match(/^([1-8])  ((?:[rnbqkpRNBQKP.] ){8})$/);
+  if (row) {
+    game.rows = game.rows || [];
+    game.rows[8 - parseInt(row[1])] = row[2].trim().split(' ');
+    if (row[1] === '1')
+      show(game, game.rows);
+  }
+  else if (line === 'checkmate') {
+    finish(game, game.moves.length % 2 ? -10000 : 10000); // white to move and mated, or black
+  }
+  else if (line === 'stalemate') {
+    finish(game, 0);
+  }
+  else if (/^([a-h][1-8][a-h][1-8][qrbn]? ?)+$/.test(line)) {
+    if (game.moves.length >= parseInt(document.getElementById('plies').value) * 2)
+      game.final = true; // one last search for the eval, white to move
+    search(game);
+  }
+  else if (line.startsWith('info ')) {
+    const m = line.match(/score (cp|mate) (-?\d+)/);
+    if (m)
+      game.last = m[1] === 'cp' ? parseInt(m[2]) : (m[2] > 0 ? 10000 : -10000);
+  }
+  else if (line.startsWith('bestmove ')) {
+    if (game.final) {
+      finish(game, game.last);
+    }
+    else {
+      game.moves.push(line.split(' ')[1]);
+      step(game);
+    }
+  }
+}
+
+function start() {
+  for (let i = 0; i < games.length; i++)
+    if (games[i].worker)
+      games[i].worker.terminate();
+  boardsEl.innerHTML = '';
+  summaryEl.textContent = '';
+  resultsEl.textContent = '';
+  games = [];
+  finished = 0;
+  for (let i = 0; i < FIRST_MOVES.length; i++) {
+    const game = makeGame(FIRST_MOVES[i]);
+    game.worker = new Worker('../naddu.js');
+    game.worker.onmessage = function(e) { onMessage(game, e.data); };
+    game.worker.postMessage('ucinewgame');
+    games.push(game);
+    step(game);
+  }
+}
+
+document.getElementById('start').onclick = start;
+
+start();
+</script>
+
+</body>
+</html>

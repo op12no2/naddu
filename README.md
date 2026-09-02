@@ -36,6 +36,7 @@ Try this example here: https://op12no2.github.io/naddu/examples/hello_world.html
 - https://op12no2.github.io/naddu/examples/play.html - play against Naddu at five strength levels, or watch Naddu play itself.
 - https://op12no2.github.io/naddu/examples/endgames.html - plays out random K+Q v K and K+R v K positions and checks white mates.
 - https://op12no2.github.io/naddu/examples/analysis.html - set up a position by dragging pieces, presets or FEN, then analyse it.
+- https://op12no2.github.io/naddu/examples/openings.html - twenty workers play out each first move and rank them.
 
 ## Command line
 
