@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Naddu console</title>
+<style>
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: #111;
+    color: #ddd;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 14px;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    max-width: 60em;
+    margin: 0 auto;
+    padding: 1em;
+    box-sizing: border-box;
+  }
+  #output {
+    flex: 1;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    margin: 0;
+  }
+  #output .cmd {
+    color: #8f8;
+  }
+  #prompt {
+    display: flex;
+    margin-top: 0.5em;
+  }
+  #prompt span {
+    color: #8f8;
+    padding-right: 0.5em;
+  }
+  #input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: #ddd;
+    font: inherit;
+  }
+</style>
+</head>
+<body>
+
+<pre id="output"></pre>
+
+<div id="prompt">
+  <span>&gt;</span>
+  <input id="input" autofocus autocomplete="off" spellcheck="false">
+</div>
+
+<script>
+const naddu = new Worker('../naddu.js');
+const output = document.getElementById('output');
+const input = document.getElementById('input');
+
+const history = [];
+let historyIndex = 0;
+
+function write(text, cls) {
+  const line = document.createElement('div');
+  if (cls)
+    line.className = cls;
+  line.textContent = text;
+  output.appendChild(line);
+  output.scrollTop = output.scrollHeight;
+}
+
+function send(cmd) {
+  write('> ' + cmd, 'cmd');
+  naddu.postMessage(cmd);
+}
+
+naddu.onmessage = function(e) {
+  write(e.data);
+};
+
+input.onkeydown = function(e) {
+  if (e.key === 'Enter') {
+    const cmd = input.value.trim();
+    input.value = '';
+    if (cmd) {
+      history.push(cmd);
+      historyIndex = history.length;
+      send(cmd);
+    }
+  }
+  else if (e.key === 'ArrowUp') {
+    if (historyIndex > 0)
+      input.value = history[--historyIndex];
+    e.preventDefault();
+  }
+  else if (e.key === 'ArrowDown') {
+    input.value = historyIndex < history.length - 1 ? history[++historyIndex] : '';
+    if (historyIndex >= history.length - 1)
+      historyIndex = history.length;
+    e.preventDefault();
+  }
+};
+
+document.body.onclick = function() {
+  input.focus();
+};
+
+send('uci');
+send('?');
+</script>
+
+</body>
+</html>

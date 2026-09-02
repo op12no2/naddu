@@ -32,6 +32,7 @@ Try this example here: https://op12no2.github.io/naddu/examples/hello_world.html
 ## More examples
 
 - https://op12no2.github.io/naddu/examples/mates.html - finds mates and checks the reported mate distance.
+- https://op12no2.github.io/naddu/examples/console.html - a console, type UCI commands and see the replies, `?` lists them.
 
 ## Command line
 

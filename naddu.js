@@ -2264,8 +2264,31 @@ function execTokens(tokens) {
       uciQuit();
       break;
 
+    case '?':
+    case 'help':
+      uciWrite('uci                         show engine name and author');
+      uciWrite('isready                     replies readyok');
+      uciWrite('ucinewgame (u)              clear the hash and history, do this before a new game');
+      uciWrite('position (p) startpos       set up the start position, optionally followed by moves e2e4 e7e5 ...');
+      uciWrite('position (p) fen <fen>      set up a position from a fen string, optionally followed by moves');
+      uciWrite('go (g)                      think for 100ms and reply with the best move');
+      uciWrite('go (g) depth (d) <n>        search to a fixed depth');
+      uciWrite('go (g) movetime (m) <ms>    search for a fixed number of milliseconds');
+      uciWrite('go (g) nodes (n) <n>        search a fixed number of nodes');
+      uciWrite('go (g) wtime <ms> btime <ms> winc <ms> binc <ms> [movestogo <n>]');
+      uciWrite('                            search using the game clock');
+      uciWrite('board (b)                   show the current position');
+      uciWrite('eval (e)                    show the static eval of the current position');
+      uciWrite('perft (f) <depth>           count leaf nodes to the given depth');
+      uciWrite('bench (h)                   search 50 positions and report nodes and nps');
+      uciWrite('evaltests (et)              show the eval of the bench positions');
+      uciWrite('perfttests (pt)             run the perft test suite (takes a while)');
+      uciWrite('quit (q)                    exit');
+      uciWrite('? or help                   show this');
+      break;
+
     default:
-      uciWrite('?');
+      uciWrite('? for help');
 
   }
 }
