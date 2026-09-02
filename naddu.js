@@ -1228,6 +1228,33 @@ function makeNull(pos) {
 
 }
 
+// list the legal moves, or checkmate/stalemate if there are none - handy for web pages
+function printMoves() {
+
+  const node = nodes[0];
+  const pos = node.pos;
+  const nextPos = nodes[1].pos;
+  const stmi = pos.stm >> 3;
+  const nstm = pos.stm ^ BLACK;
+
+  genMoves(node);
+
+  let str = '';
+
+  for (let i = 0; i < node.numMoves; i++) {
+    const move = node.moves[i];
+    posSet(nextPos, pos);
+    makeMove(move, nextPos);
+    if (!isAttacked(nextPos, nextPos.kings[stmi], nstm))
+      str += (str ? ' ' : '') + formatMove(move);
+  }
+
+  if (!str)
+    str = isAttacked(pos, pos.kings[stmi], nstm) ? 'checkmate' : 'stalemate';
+
+  uciWrite(str);
+}
+
 function doMove(uciMove) {
 
   const node = nodes[0];
@@ -2227,6 +2254,11 @@ function execTokens(tokens) {
       printBoard();
       break;
 
+    case 'moves':
+    case 'l':
+      printMoves();
+      break;
+
     case 'perft':
     case 'f': {
         const depth = parseInt(tokens[1]);
@@ -2278,6 +2310,7 @@ function execTokens(tokens) {
       uciWrite('go (g) wtime <ms> btime <ms> winc <ms> binc <ms> [movestogo <n>]');
       uciWrite('                            search using the game clock');
       uciWrite('board (b)                   show the current position');
+      uciWrite('moves (l)                   list the legal moves, or checkmate/stalemate if there are none');
       uciWrite('eval (e)                    show the static eval of the current position');
       uciWrite('perft (f) <depth>           count leaf nodes to the given depth');
       uciWrite('bench (h)                   search 50 positions and report nodes and nps');
