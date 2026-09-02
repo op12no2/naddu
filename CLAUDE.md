@@ -92,7 +92,6 @@ engine and the next match measures only the next feature.
 - mobility in eval
 - king safety in eval
 - lmp - tried Sep 2026 (non-PV, depth <= 3, skip quiet moves after 3 + 3*depth*depth): -4 +/- 11 Elo, neutral, left out as not worth the code on top of futility pruning
-- stop early if mate found (more fun at the risk of finding a faster mate)
 
 always add a link to the chess programming wiki when adding a new feature.
 
