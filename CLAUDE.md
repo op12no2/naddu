@@ -25,6 +25,13 @@ Simplicity is just as important.
 - `node naddu.js "position startpos" "board"` show startpos board
 - `node naddu.js et` eval tests (very quick)
 - `node naddu.js pt` perft tests (takes ~8 mins)
+- `node tooling/example.js examples/mates.html` run an example page in headless chromium and print its results
+
+## examples
+
+`examples/*.html` are for users and double as tests. Each is a standalone page using the Worker
+(`new Worker('../naddu.js')`). Test pages fill `#results` and `#summary` ("n of m passed") so that
+`tooling/example.js` can run them. Keep them vanilla and in the same style as `hello_world.html`.
 
 ## match testing
 
@@ -81,6 +88,7 @@ PGN is saved to `tooling/match.pgn` for style analysis.
 - aspiration window to go()
 - lmp
 - futility pruning
+- stop early if mate found (more fun at the risk of finding a faster mate)
 
 always add a link to the chess programming wiki when adding a new feature.
 

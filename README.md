@@ -23,7 +23,12 @@ naddu.postMessage('go depth 8');
 naddu.postMessage('go movetime 1000')
 ```
 
-Try the example code: https://op12no2.github.io/naddu/naddu.html
+Try this example here: https://op12no2.github.io/naddu/examples/hello_world.html
+
+More examples, which double as tests, are in `examples`:-
+
+- https://op12no2.github.io/naddu/examples/hello_world.html - the code above
+- https://op12no2.github.io/naddu/examples/mates.html - finds mates and checks the reported mate distance
 
 Naddu can also be started from a command line using `Node` or `Bun`:-
 
