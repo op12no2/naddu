@@ -2024,7 +2024,7 @@ function bench() {
 
   newGame();
 
-  const DEPTH = 5;
+  const DEPTH = 6;
 
   let totalNodes = 0;
   const t1 = now();
