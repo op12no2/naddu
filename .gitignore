@@ -2,4 +2,4 @@ releases/*
 tooling/*.epd
 tooling/fastchess
 tooling/match.pgn
-tooling/config.json
+config.json
