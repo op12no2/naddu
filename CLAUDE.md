@@ -91,7 +91,7 @@ engine and the next match measures only the next feature.
 - passed pawns in eval - tried Sep 2026 (per-file rank tracking, bonus 0/0/5/10/20/40/60 mg, 0/5/15/30/50/85/130 eg by rank): -19 +/- 12 Elo, rejected. PeSTO PSTs already reward advanced pawns and eval got 30% slower. A retry needs a different design, not smaller numbers.
 - mobility in eval
 - king safety in eval
-- lmp
+- lmp - tried Sep 2026 (non-PV, depth <= 3, skip quiet moves after 3 + 3*depth*depth): -4 +/- 11 Elo, neutral, left out as not worth the code on top of futility pruning
 - stop early if mate found (more fun at the risk of finding a faster mate)
 
 always add a link to the chess programming wiki when adding a new feature.
