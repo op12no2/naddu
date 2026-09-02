@@ -17,6 +17,7 @@ fi
 rounds=${ROUNDS:-1000}          # 2 games per round with -repeat
 concurrency=${CONCURRENCY:-16}
 tc=${TC:-1+0.1}
+timemargin=${TIMEMARGIN:-200}   # some engines overshoot the clock, raise this for a fair gauntlet
 book=tooling/4moves_noob.epd
 pgn=tooling/match.pgn
 
@@ -40,7 +41,7 @@ rm -f $pgn
 tooling/fastchess \
   -engine name=dev  cmd=$dev \
   -engine name=base cmd=$base \
-  -each proto=uci tc=$tc timemargin=200 \
+  -each proto=uci tc=$tc timemargin=$timemargin \
   -rounds $rounds -repeat \
   -concurrency $concurrency \
   -openings file=$book format=epd order=random \
