@@ -178,6 +178,7 @@ class Node {
     this.ttMove = 0;
     this.killer = 0;
     this.draw = 0;
+    this.noNull = 0; // set on the child of a null move
     this.pv = new Uint32Array(MAX_PLY); // triangular pv, copied up from child on alpha improvement
     this.pvLen = 0;
   }
@@ -1154,6 +1155,25 @@ function makeMove(move, pos) {
 
 }
 
+// pass the move: toggle stm and clear ep
+function makeNull(pos) {
+
+  let lo = pos.hashLo ^ zobBlackLo;
+  let hi = pos.hashHi ^ zobBlackHi;
+
+  if (pos.ep) {
+    lo ^= zobEpLo[pos.ep];
+    hi ^= zobEpHi[pos.ep];
+    pos.ep = 0;
+  }
+
+  pos.hmc++;
+  pos.stm ^= BLACK;
+  pos.hashLo = lo >>> 0;
+  pos.hashHi = hi >>> 0;
+
+}
+
 function doMove(uciMove) {
 
   const node = nodes[0];
@@ -1654,6 +1674,20 @@ function search(depth, ply, alpha, beta) {
   // beta pruning
   if (!isPV && !inCheck && depth <=  8 && beta < TT_MATE_BOUND && (ev - depth * 100) >= beta)
     return ev;
+
+  // null move pruning - counts[] is still valid from evaluate() above
+  if (!isPV && !inCheck && !node.noNull && depth >= 2 && ev >= beta && beta < TT_MATE_BOUND
+      && (counts[KNIGHT | pos.stm] + counts[BISHOP | pos.stm] + counts[ROOK | pos.stm] + counts[QUEEN | pos.stm]) > 0) {
+    posSet(nextPos, pos);
+    makeNull(nextPos);
+    nextNode.noNull = 1;
+    const score = -search(depth - 1 - 2 - (depth >> 2), ply + 1, -beta, -beta + 1);
+    nextNode.noNull = 0;
+    if (tc.finished)
+      return 0;
+    if (score >= beta)
+      return score >= TT_MATE_BOUND ? beta : score;
+  }
 
   const ttMove = ttIndex >= 0 ? moveIsProbablyLegal(node, ttGetMove(ttIndex)) : 0;
 
