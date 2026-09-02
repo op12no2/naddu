@@ -1633,7 +1633,7 @@ function search(depth, ply, alpha, beta) {
 
   // check tt
   const ttIndex = ttGet(pos);
-  if (!isRoot && ttIndex >= 0 && ttGetDepth(ttIndex) >= depth) {
+  if (!isPV && ttIndex >= 0 && ttGetDepth(ttIndex) >= depth) {
     const score = ttScoreFromTT(ttGetScore(ttIndex), ply);
     const type = ttGetType(ttIndex);
     if (type === TT_EXACT || (type === TT_BETA && score >= beta) || (type === TT_ALPHA && score <= alpha)) {
