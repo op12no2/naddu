@@ -89,7 +89,7 @@ function write(text, cls) {
     cls = 'board';
   if (cls)
     line.className = cls;
-  line.textContent = shown;
+  line.textContent = shown || '\u00A0'; // empty divs have no height
   output.appendChild(line);
   output.scrollTop = output.scrollHeight;
 }

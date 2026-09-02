@@ -2177,7 +2177,7 @@ function execTokens(tokens) {
 
     case 'uci':
       uciWrite('id name Naddu 1');
-      uciWrite('id author Colin Jenkins');
+      uciWrite('id author Colin Jenkins and Claude');
 
       uciWrite('uciok');
       break;
