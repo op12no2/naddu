@@ -92,7 +92,7 @@
       <input type="checkbox" id="K"> K <input type="checkbox" id="Q"> Q
       <input type="checkbox" id="k"> k <input type="checkbox" id="q"> q
     </label>
-    <p><button id="analyse">Analyse</button><button id="stop">Stop</button><button id="clear">Clear board</button></p>
+    <p><button id="analyse">Analyse</button><button id="stop">Stop</button><button id="eval">Eval</button><button id="clear">Clear board</button></p>
   </div>
 </div>
 
@@ -303,14 +303,34 @@ function stop() {
   }
 }
 
+function kingsOk() {
+  const pieces = Object.values(board);
+  if (pieces.filter(function(p) { return p === 'K'; }).length === 1 && pieces.filter(function(p) { return p === 'k'; }).length === 1)
+    return true;
+  statusEl.textContent = 'Each side needs exactly one king';
+  return false;
+}
+
+// static eval from the side to move's point of view
+function showEval() {
+  stop();
+  if (!kingsOk())
+    return;
+  resultsEl.innerHTML = '';
+  naddu = new Worker('../naddu.js');
+  naddu.onmessage = function(e) {
+    stop();
+    statusEl.textContent = 'Eval ' + e.data + ' for ' + (toFen().split(' ')[1] === 'w' ? 'white' : 'black');
+  };
+  naddu.postMessage('position fen ' + toFen());
+  naddu.postMessage('eval');
+}
+
 function analyse() {
   stop();
-  const fen = toFen();
-  const kings = Object.values(board);
-  if (kings.filter(function(p) { return p === 'K'; }).length !== 1 || kings.filter(function(p) { return p === 'k'; }).length !== 1) {
-    statusEl.textContent = 'Each side needs exactly one king';
+  if (!kingsOk())
     return;
-  }
+  const fen = toFen();
   resultsEl.innerHTML = '<tr><th>depth</th><th>score</th><th>nodes</th><th>time</th><th>pv</th></tr>';
   statusEl.textContent = 'Analysing...';
   naddu = new Worker('../naddu.js');
@@ -332,6 +352,7 @@ function analyse() {
 
 document.getElementById('analyse').onclick = analyse;
 document.getElementById('stop').onclick = stop;
+document.getElementById('eval').onclick = showEval;
 
 fromFen(PRESETS[0][1]);
 </script>
