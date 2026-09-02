@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parallel</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 70em;
+    margin: 2em auto;
+    padding: 0 1em;
+  }
+  #controls label {
+    margin-right: 1em;
+  }
+  #main {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2em;
+    align-items: flex-start;
+    margin: 1em 0;
+  }
+  #board {
+    display: grid;
+    grid-template-columns: repeat(8, 48px);
+    grid-template-rows: repeat(8, 48px);
+    border: 2px solid #444;
+  }
+  #board .sq {
+    font-size: 34px;
+  }
+  .sq {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    user-select: none;
+  }
+  .light { background: #eed; }
+  .dark { background: #997; }
+  .best { box-shadow: inset 0 0 0 4px #6a6; }
+  #workers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1em;
+  }
+  .worker {
+    width: 192px;
+  }
+  .worker .board {
+    display: grid;
+    grid-template-columns: repeat(8, 24px);
+    grid-template-rows: repeat(8, 24px);
+    border: 1px solid #444;
+  }
+  .worker .sq {
+    font-size: 18px;
+  }
+  .caption, pre {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 14px;
+    margin: 0.3em 0;
+    white-space: pre-wrap;
+  }
+  #status, #summary {
+    font-weight: bold;
+  }
+</style>
+</head>
+<body>
+
+<h1>Parallel</h1>
+
+<p>A parallel search by splitting the root. The legal moves are put in a queue and each worker takes the next move,
+searches the position after it, and reports back. The best score wins. The workers cannot share a bound the way
+alpha-beta does within one search, so the speed up is less than the number of workers, and as a bonus you get a score
+for every root move. When the workers finish, one ordinary search of the same position runs for comparison.</p>
+
+<div id="controls">
+  <label>Position <select id="preset"></select></label>
+  <label>Workers <select id="workers-n">
+    <option>1</option><option>2</option><option>4</option><option selected>8</option><option>16</option>
+  </select></label>
+  <label>Depth <select id="depth"></select></label>
+  <button id="start">Start</button>
+</div>
+
+<div id="main">
+  <div>
+    <div id="board"></div>
+    <div id="status" class="caption"></div>
+  </div>
+  <div id="workers"></div>
+</div>
+
+<p id="summary"></p>
+
+<pre id="results"></pre>
+
+<script>
+const PIECES = {
+  K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙',
+  k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟',
+  '.': ''
+};
+
+const PRESETS = [
+  ['Start position', 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'],
+  ['Kiwipete',       'r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1'],
+  ['BK.05 (Nd5 or a4)', 'r1b2rk1/2q1b1pp/p2ppn2/1p6/3QP3/1BN1B3/PPP3PP/R4RK1 w - - 0 1'],
+  ['BK.13 (b4)',     'r2q1rk1/4bppp/p2p4/2pP4/3pP3/3Q4/PP1B1PPP/R3R1K1 w - - 0 1'],
+  ['Mate in 3',      '2r3k1/p4p2/3Rp2p/1p2P1pK/8/1P4P1/P3Q2P/1q6 b - - 0 1']
+];
+
+const FILES = 'abcdefgh';
+
+const boardEl = document.getElementById('board');
+const workersEl = document.getElementById('workers');
+const statusEl = document.getElementById('status');
+const summaryEl = document.getElementById('summary');
+const resultsEl = document.getElementById('results');
+const presetEl = document.getElementById('preset');
+const depthEl = document.getElementById('depth');
+
+for (let i = 0; i < PRESETS.length; i++) {
+  const opt = document.createElement('option');
+  opt.value = i;
+  opt.textContent = PRESETS[i][0];
+  presetEl.appendChild(opt);
+}
+for (let d = 4; d <= 14; d++) {
+  const opt = document.createElement('option');
+  opt.textContent = d;
+  if (d === 10)
+    opt.selected = true;
+  depthEl.appendChild(opt);
+}
+
+function makeBoard(el, size) {
+  for (let rank = 8; rank >= 1; rank--) {
+    for (let file = 0; file < 8; file++) {
+      const sq = document.createElement('div');
+      sq.className = 'sq ' + ((rank + file) % 2 ? 'dark' : 'light');
+      sq.dataset.id = FILES[file] + rank;
+      el.appendChild(sq);
+    }
+  }
+}
+
+function show(el, rows) {
+  const squares = el.children;
+  for (let r = 0; r < 8; r++)
+    for (let f = 0; f < 8; f++)
+      squares[r * 8 + f].textContent = PIECES[rows[r][f]];
+}
+
+makeBoard(boardEl, 48);
+
+let fen = '';
+let main = null;      // worker used for the position, the move list and the comparison search
+let workers = [];
+let queue = [];       // root moves still to search
+let results = [];     // {move, score, pv}
+let best = null;
+let t0 = 0;
+let parallelMs = 0;
+let comparing = false;
+
+function parseRow(game, line) {
+  const row = line.match(/^([1-8])  ((?:[rnbqkpRNBQKP.] ){8})$/);
+  if (!row)
+    return false;
+  game.rows[8 - parseInt(row[1])] = row[2].trim().split(' ');
+  if (row[1] === '1')
+    show(game.boardEl, game.rows);
+  return true;
+}
+
+function highlight(move) {
+  const squares = boardEl.children;
+  for (let i = 0; i < 64; i++) {
+    const id = squares[i].dataset.id;
+    squares[i].classList.toggle('best', !!move && (move.indexOf(id) === 0 || move.indexOf(id) === 2));
+  }
+}
+
+// hand the next root move to a worker, or note that it is idle
+function next(w) {
+  if (queue.length === 0) {
+    w.move = '';
+    w.caption.textContent = 'worker ' + w.id + ': done';
+    if (workers.every(function(x) { return !x.move; }))
+      finishParallel();
+    return;
+  }
+  w.move = queue.shift();
+  w.score = 0;
+  w.pv = [];
+  w.caption.textContent = 'worker ' + w.id + ': ' + w.move + ' ...';
+  w.worker.postMessage('position fen ' + fen + ' moves ' + w.move);
+  w.worker.postMessage('go depth ' + (parseInt(depthEl.value) - 1));
+}
+
+function onWorker(w, line) {
+  if (parseRow(w, line)) {
+    if (w.rows[0] && line[0] === '1')
+      next(w);
+    return;
+  }
+  if (line.startsWith('info ')) {
+    const m = line.match(/score (cp|mate) (-?\d+) .* pv (.*)$/);
+    if (m) {
+      w.score = -(m[1] === 'cp' ? parseInt(m[2]) : (m[2] > 0 ? 10000 : -10000));
+      w.pv = m[3].split(' ');
+    }
+  }
+  else if (line.startsWith('bestmove ')) {
+    results.push({move: w.move, score: w.score, pv: w.pv});
+    if (!best || w.score > best.score) {
+      best = {move: w.move, score: w.score, pv: w.pv};
+      highlight(best.move);
+      statusEl.textContent = 'best so far ' + best.move + ' ' + (best.score > 0 ? '+' : '') + best.score + '  ' + best.pv.join(' ');
+    }
+    w.caption.textContent = 'worker ' + w.id + ': ' + w.move + ' ' + (w.score > 0 ? '+' : '') + w.score;
+    // show the end of the line, then take the next move (in parseRow)
+    w.rows = [];
+    w.worker.postMessage('position fen ' + fen + ' moves ' + w.move + ' ' + w.pv.join(' '));
+    w.worker.postMessage('board');
+  }
+}
+
+function finishParallel() {
+  parallelMs = Math.round(performance.now() - t0);
+  results.sort(function(a, b) { return b.score - a.score; });
+  let text = 'root moves at depth ' + depthEl.value + ' from the root, ' + workers.length + ' workers, ' + parallelMs + ' ms\n\n';
+  for (const r of results)
+    text += r.move + '  ' + (r.score > 0 ? '+' : '') + String(r.score).padEnd(6) + ' ' + r.pv.join(' ') + '\n';
+  resultsEl.textContent = text;
+  for (const w of workers)
+    w.worker.terminate();
+  // now one ordinary search for comparison
+  comparing = true;
+  statusEl.textContent = 'workers found ' + best.move + ', now one search on its own...';
+  t0 = performance.now();
+  main.postMessage('go depth ' + depthEl.value);
+}
+
+function onMain(line) {
+  if (parseRow(mainGame, line))
+    return;
+  if (comparing) {
+    if (line.startsWith('bestmove ')) {
+      const ms = Math.round(performance.now() - t0);
+      const move = line.split(' ')[1];
+      summaryEl.textContent = workers.length + ' workers: ' + best.move + ' in ' + parallelMs + ' ms.  One search: ' + move + ' in ' + ms
+        + ' ms.  ' + (move === best.move ? 'Same move.' : 'Different move.');
+      statusEl.textContent = 'best ' + best.move + ' ' + (best.score > 0 ? '+' : '') + best.score + '  ' + best.pv.join(' ');
+      comparing = false;
+    }
+    return;
+  }
+  if (/^([a-h][1-8][a-h][1-8][qrbn]? ?)+$/.test(line)) {
+    queue = line.split(' ');
+    t0 = performance.now();
+    for (const w of workers)
+      next(w);
+  }
+  else if (line === 'checkmate' || line === 'stalemate') {
+    statusEl.textContent = line + ', nothing to search';
+    summaryEl.textContent = line;
+  }
+}
+
+const mainGame = {rows: [], boardEl: boardEl};
+
+function start() {
+  if (main)
+    main.terminate();
+  for (const w of workers)
+    w.worker.terminate();
+  workersEl.innerHTML = '';
+  resultsEl.textContent = '';
+  summaryEl.textContent = '';
+  statusEl.textContent = '';
+  highlight('');
+  fen = PRESETS[presetEl.value][1];
+  results = [];
+  best = null;
+  comparing = false;
+  workers = [];
+  const n = parseInt(document.getElementById('workers-n').value);
+  for (let i = 0; i < n; i++) {
+    const el = document.createElement('div');
+    el.className = 'worker';
+    const caption = document.createElement('div');
+    caption.className = 'caption';
+    caption.textContent = 'worker ' + (i + 1);
+    const b = document.createElement('div');
+    b.className = 'board';
+    makeBoard(b, 24);
+    el.appendChild(caption);
+    el.appendChild(b);
+    workersEl.appendChild(el);
+    const w = {id: i + 1, el: el, boardEl: b, caption: caption, rows: [], move: '', score: 0, pv: [], worker: new Worker('../naddu.js')};
+    w.worker.onmessage = function(e) { onWorker(w, e.data); };
+    w.worker.postMessage('ucinewgame');
+    workers.push(w);
+  }
+  main = new Worker('../naddu.js');
+  main.onmessage = function(e) { onMain(e.data); };
+  mainGame.rows = [];
+  main.postMessage('ucinewgame');
+  main.postMessage('position fen ' + fen);
+  main.postMessage('board');
+  main.postMessage('moves');
+}
+
+document.getElementById('start').onclick = start;
+
+start();
+</script>
+
+</body>
+</html>
