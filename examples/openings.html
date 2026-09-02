@@ -57,11 +57,11 @@
 
 <h1>Openings</h1>
 
-<p>Twenty workers, one for each legal first move. Each scores its first move with a search, then plays itself for a
-few moves for the fun of it. At the end the boards are sorted by the score, so the top left is the first move Naddu likes best.</p>
+<p>Twenty workers, one for each legal first move. Each searches the position after its move and the boards are sorted
+by the score, so the top left is the first move Naddu likes best. Then each board plays through the line the search found.</p>
 
 <div id="controls">
-  <label>Nodes per move <select id="nodes">
+  <label>Nodes <select id="nodes">
     <option>2000</option>
     <option selected>10000</option>
     <option>50000</option>
@@ -69,7 +69,6 @@ few moves for the fun of it. At the end the boards are sorted by the score, so t
     <option>250000</option>
     <option>500000</option>
   </select></label>
-  <label>Moves <input id="plies" type="number" value="10" min="1" max="40" style="width:4em"></label>
   <button id="start">Start</button>
 </div>
 
@@ -91,12 +90,14 @@ const FIRST_MOVES = [
   'f2f3', 'f2f4', 'g2g3', 'g2g4', 'h2h3', 'h2h4', 'b1a3', 'b1c3', 'g1f3', 'g1h3'
 ];
 
+const STEP_MS = 600; // pause between pv moves when playing through
+
 const boardsEl = document.getElementById('boards');
 const summaryEl = document.getElementById('summary');
 const resultsEl = document.getElementById('results');
 
 let games = [];
-let finished = 0;
+let scored = 0;
 
 function makeGame(first) {
   const el = document.createElement('div');
@@ -116,40 +117,33 @@ function makeGame(first) {
   el.appendChild(caption);
   el.appendChild(board);
   boardsEl.appendChild(el);
-  return {first: first, moves: [first], el: el, board: board, caption: caption, score: null, scored: false, worker: null};
+  return {first: first, el: el, board: board, caption: caption, score: 0, pv: [], shown: 0, rows: [], worker: null};
 }
 
-function show(game, rows) {
+function show(game) {
   const squares = game.board.children;
   for (let r = 0; r < 8; r++) {
     for (let f = 0; f < 8; f++)
-      squares[r * 8 + f].textContent = PIECES[rows[r][f]];
+      squares[r * 8 + f].textContent = PIECES[game.rows[r][f]];
   }
 }
 
-// score the first move with a search from the position after it (black to move, so negate), then play
-function score(game) {
-  game.worker.postMessage('position startpos moves ' + game.first);
-  search(game);
-}
-
-function step(game) {
-  game.worker.postMessage('position startpos moves ' + game.moves.join(' '));
+// ask the worker to draw the position after the first n moves of first + pv
+function draw(game, n) {
+  game.worker.postMessage('position startpos moves ' + game.first + ' ' + game.pv.slice(0, n).join(' '));
   game.worker.postMessage('board');
-  game.worker.postMessage('moves');
 }
 
-function search(game) {
-  game.worker.postMessage('go nodes ' + document.getElementById('nodes').value);
-}
-
-function finish(game) {
-  game.caption.textContent = game.first + '  ' + (game.score > 0 ? '+' : '') + game.score + '  done';
-  game.worker.terminate();
-  game.worker = null;
-  finished++;
-  if (finished === games.length)
-    rank();
+// play through the pv one move at a time
+function animate(game) {
+  if (game.shown > game.pv.length) {
+    game.worker.terminate();
+    game.worker = null;
+    return;
+  }
+  draw(game, game.shown);
+  game.shown++;
+  setTimeout(function() { animate(game); }, STEP_MS);
 }
 
 function rank() {
@@ -159,7 +153,8 @@ function rank() {
     const g = games[i];
     g.caption.textContent = (i + 1) + '. ' + g.first + '  ' + (g.score > 0 ? '+' : '') + g.score;
     boardsEl.appendChild(g.el); // re-append in ranked order
-    text += g.caption.textContent + '  ' + g.moves.join(' ') + '\n';
+    text += g.caption.textContent + '  ' + g.pv.join(' ') + '\n';
+    animate(g);
   }
   resultsEl.textContent = text;
   summaryEl.textContent = 'Naddu likes ' + games[0].first + ' best and ' + games[games.length - 1].first + ' least';
@@ -168,36 +163,22 @@ function rank() {
 function onMessage(game, line) {
   const row = line.match(/^([1-8])  ((?:[rnbqkpRNBQKP.] ){8})$/);
   if (row) {
-    game.rows = game.rows || [];
     game.rows[8 - parseInt(row[1])] = row[2].trim().split(' ');
     if (row[1] === '1')
-      show(game, game.rows);
-  }
-  else if (line === 'checkmate' || line === 'stalemate') {
-    finish(game);
-  }
-  else if (/^([a-h][1-8][a-h][1-8][qrbn]? ?)+$/.test(line)) {
-    if (game.moves.length >= parseInt(document.getElementById('plies').value) * 2)
-      finish(game);
-    else
-      search(game);
+      show(game);
   }
   else if (line.startsWith('info ')) {
-    const m = line.match(/score (cp|mate) (-?\d+)/);
-    if (m)
-      game.last = m[1] === 'cp' ? parseInt(m[2]) : (m[2] > 0 ? 10000 : -10000);
+    const m = line.match(/score (cp|mate) (-?\d+) .* pv (.*)$/);
+    if (m) {
+      game.score = -(m[1] === 'cp' ? parseInt(m[2]) : (m[2] > 0 ? 10000 : -10000)); // black to move, so negate
+      game.pv = m[3].split(' ');
+    }
   }
   else if (line.startsWith('bestmove ')) {
-    if (!game.scored) {
-      game.scored = true;
-      game.score = -game.last;
-      game.caption.textContent = game.first + '  ' + (game.score > 0 ? '+' : '') + game.score;
-      step(game);
-    }
-    else {
-      game.moves.push(line.split(' ')[1]);
-      step(game);
-    }
+    game.caption.textContent = game.first + '  ' + (game.score > 0 ? '+' : '') + game.score;
+    scored++;
+    if (scored === games.length)
+      rank();
   }
 }
 
@@ -209,14 +190,16 @@ function start() {
   summaryEl.textContent = '';
   resultsEl.textContent = '';
   games = [];
-  finished = 0;
+  scored = 0;
   for (let i = 0; i < FIRST_MOVES.length; i++) {
     const game = makeGame(FIRST_MOVES[i]);
     game.worker = new Worker('../naddu.js');
     game.worker.onmessage = function(e) { onMessage(game, e.data); };
     game.worker.postMessage('ucinewgame');
+    game.worker.postMessage('position startpos moves ' + game.first);
+    game.worker.postMessage('board');
+    game.worker.postMessage('go nodes ' + document.getElementById('nodes').value);
     games.push(game);
-    score(game);
   }
 }
 
