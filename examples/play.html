@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Naddu play</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 60em;
+    margin: 2em auto;
+    padding: 0 1em;
+  }
+  #controls {
+    margin-bottom: 1em;
+  }
+  #controls label {
+    margin-right: 1em;
+  }
+  #board {
+    display: grid;
+    grid-template-columns: repeat(8, 48px);
+    grid-template-rows: repeat(8, 48px);
+    width: 384px;
+    border: 2px solid #444;
+    user-select: none;
+  }
+  .sq {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 34px;
+    cursor: pointer;
+  }
+  .light { background: #eed; }
+  .dark { background: #997; }
+  .from { background: #fd6; }
+  .last { box-shadow: inset 0 0 0 3px #6a6; }
+  #status {
+    margin: 1em 0;
+    font-weight: bold;
+  }
+  pre {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 14px;
+    white-space: pre-wrap;
+  }
+</style>
+</head>
+<body>
+
+<h1>Play</h1>
+
+<div id="controls">
+  <label>White <select id="white"><option>You</option><option>Naddu</option></select></label>
+  <label>Black <select id="black"><option>You</option><option selected>Naddu</option></select></label>
+  <label>Movetime <input id="movetime" type="number" value="1000" min="10" step="100" style="width:5em"> ms</label>
+  <button id="new">New game</button>
+</div>
+
+<div id="board"></div>
+
+<div id="status"></div>
+
+<pre id="info"></pre>
+<pre id="moves"></pre>
+
+<script>
+const PIECES = {
+  K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙',
+  k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟',
+  '.': ''
+};
+
+const naddu = new Worker('../naddu.js');
+const boardEl = document.getElementById('board');
+const statusEl = document.getElementById('status');
+const infoEl = document.getElementById('info');
+const movesEl = document.getElementById('moves');
+
+let moves = [];        // uci moves played so far
+let board = [];        // 8 rows from the engine, row 0 is rank 8
+let stm = 'white';
+let legal = [];        // legal moves from the engine
+let gameOver = '';
+let from = '';         // selected square
+let thinking = false;
+
+// build the 64 squares once
+for (let rank = 8; rank >= 1; rank--) {
+  for (let file = 0; file < 8; file++) {
+    const sq = document.createElement('div');
+    sq.id = 'abcdefgh'[file] + rank;
+    sq.className = 'sq ' + ((rank + file) % 2 ? 'dark' : 'light');
+    sq.onclick = onClick;
+    boardEl.appendChild(sq);
+  }
+}
+
+function draw() {
+  const last = moves.length ? moves[moves.length - 1] : '';
+  for (let rank = 8; rank >= 1; rank--) {
+    for (let file = 0; file < 8; file++) {
+      const id = 'abcdefgh'[file] + rank;
+      const sq = document.getElementById(id);
+      sq.textContent = PIECES[board[8 - rank][file]];
+      sq.className = 'sq ' + ((rank + file) % 2 ? 'dark' : 'light');
+      if (id === from)
+        sq.className += ' from';
+      if (last.indexOf(id) === 0 || last.indexOf(id) === 2)
+        sq.className += ' last';
+    }
+  }
+  let list = '';
+  for (let i = 0; i < moves.length; i++)
+    list += (i % 2 ? ' ' : (i ? '  ' : '') + (i / 2 + 1) + '.') + moves[i];
+  movesEl.textContent = list;
+  statusEl.textContent = gameOver || (thinking ? 'Naddu is thinking...' : stm + ' to move');
+}
+
+function player(colour) {
+  return document.getElementById(colour).value;
+}
+
+// ask the engine for the position after the moves so far, then continue in onmessage
+function update() {
+  naddu.postMessage('position startpos moves ' + moves.join(' '));
+  naddu.postMessage('board');
+  naddu.postMessage('moves');
+}
+
+function next() {
+  draw();
+  if (gameOver)
+    return;
+  if (player(stm) === 'Naddu') {
+    thinking = true;
+    draw();
+    naddu.postMessage('go movetime ' + document.getElementById('movetime').value);
+  }
+}
+
+naddu.onmessage = function(e) {
+  const line = e.data;
+  const row = line.match(/^([1-8])  ((?:[rnbqkpRNBQKP.] ){8})$/);
+  if (row) {
+    board[8 - parseInt(row[1])] = row[2].trim().split(' ');
+  }
+  else if (line.startsWith('stm: ')) {
+    stm = line.slice(5);
+  }
+  else if (line === 'checkmate') {
+    gameOver = 'Checkmate, ' + (stm === 'white' ? 'black' : 'white') + ' wins';
+    next();
+  }
+  else if (line === 'stalemate') {
+    gameOver = 'Stalemate';
+    next();
+  }
+  else if (/^([a-h][1-8][a-h][1-8][qrbn]? ?)+$/.test(line)) {
+    legal = line.split(' ');
+    if (moves.length >= 400)
+      gameOver = 'Draw, move limit';
+    next();
+  }
+  else if (line.startsWith('info ')) {
+    infoEl.textContent = line;
+  }
+  else if (line.startsWith('bestmove ')) {
+    thinking = false;
+    moves.push(line.split(' ')[1]);
+    update();
+  }
+};
+
+function onClick(e) {
+  if (gameOver || thinking || player(stm) !== 'You')
+    return;
+  const id = e.currentTarget.id;
+  if (from) {
+    let move = from + id;
+    if (legal.indexOf(move + 'q') >= 0)
+      move += 'q'; // promotions are always to a queen here
+    if (legal.indexOf(move) >= 0) {
+      from = '';
+      moves.push(move);
+      update();
+      return;
+    }
+  }
+  // select a square that has a legal move from it
+  from = '';
+  for (let i = 0; i < legal.length; i++) {
+    if (legal[i].indexOf(id) === 0)
+      from = id;
+  }
+  draw();
+}
+
+document.getElementById('new').onclick = function() {
+  moves = [];
+  gameOver = '';
+  from = '';
+  thinking = false;
+  naddu.postMessage('ucinewgame');
+  update();
+};
+
+document.getElementById('white').onchange = next;
+document.getElementById('black').onchange = next;
+
+naddu.postMessage('ucinewgame');
+update();
+</script>
+
+</body>
+</html>

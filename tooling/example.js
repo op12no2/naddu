@@ -1,6 +1,6 @@
 // Run an example page in headless chromium and print its results, e.g.
 //   node tooling/example.js examples/mates.html
-// Waits for #summary to be filled in (or 30s), then prints #results and #summary.
+// Waits for #summary to be filled in (or 3 mins), then prints #results and #summary.
 // Serves the repo root on a local port, needs the playwright chromium headless shell.
 
 const { spawn } = require('child_process');
@@ -62,7 +62,7 @@ async function main() {
   await send('Page.navigate', {url: 'http://127.0.0.1:' + port + '/' + page});
 
   let summary = '';
-  for (let i = 0; i < 150 && !summary; i++) {
+  for (let i = 0; i < 900 && !summary; i++) {
     await sleep(200);
     summary = await evaluate("(document.getElementById('summary') || {}).textContent || ''");
   }

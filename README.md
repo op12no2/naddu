@@ -33,6 +33,8 @@ Try this example here: https://op12no2.github.io/naddu/examples/hello_world.html
 
 - https://op12no2.github.io/naddu/examples/mates.html - finds mates and checks the reported mate distance.
 - https://op12no2.github.io/naddu/examples/console.html - a console, type UCI commands and see the replies, `?` lists them.
+- https://op12no2.github.io/naddu/examples/play.html - play against Naddu, or watch Naddu play itself.
+- https://op12no2.github.io/naddu/examples/endgames.html - plays out random K+Q v K and K+R v K positions and checks white mates.
 
 ## Command line
 
