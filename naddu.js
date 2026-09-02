@@ -1280,6 +1280,9 @@ const EGB = Array(7);
 
 const counts = new Uint8Array(16);
 
+// bonus for the side to move https://www.chessprogramming.org/Tempo
+const TEMPO = 10;
+
 //
 // evaluate() uses PESTO values https://chessprogramming.org/PeSTO%27s_Evaluation_Function
 // i.e. material and piece-square tables https://www.chessprogramming.org/Piece-Square_Tables
@@ -1370,7 +1373,7 @@ function evaluate(node) {
 
   const e = Math.trunc((mgScore * phase + egScore * (24 - phase)) / 24);
 
-  return e;
+  return e + TEMPO;
 }
 
 function evalInitOnce() {
