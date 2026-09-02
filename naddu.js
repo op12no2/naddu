@@ -1434,9 +1434,10 @@ function tcClear() {
   tc.finished = 0;
 }
 
+// clock is only read every 512 nodes
 function tcCheck() {
   const tc = timeControl;
-  if (tc.finishTime && now() >= tc.finishTime)
+  if (tc.finishTime && (tc.nodes & 511) === 0 && now() >= tc.finishTime)
     tc.finished = 1;
   else if (tc.maxNodes && tc.nodes >= tc.maxNodes)
     tc.finished = 1;
