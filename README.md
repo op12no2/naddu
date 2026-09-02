@@ -4,7 +4,9 @@ Naddu is a Javascript UCI chess engine.
 
 It can be easily included in your web pages.
 
-The code is written in a stratght-forward way and deliberately easy to tweak.
+The code is written in a stratght-forward manner and deliberately easy to tweak.
+
+## Hello world
 
 ```
 const naddu = new Worker('naddu.js');
@@ -25,10 +27,11 @@ naddu.postMessage('go movetime 1000')
 
 Try this example here: https://op12no2.github.io/naddu/examples/hello_world.html
 
-More examples, which double as tests, are in `examples`:-
+## More examples
 
-- https://op12no2.github.io/naddu/examples/hello_world.html - the code above
-- https://op12no2.github.io/naddu/examples/mates.html - finds mates and checks the reported mate distance
+- https://op12no2.github.io/naddu/examples/mates.html - finds mates and checks the reported mate distance.
+
+## Command line
 
 Naddu can also be started from a command line using `Node` or `Bun`:-
 
@@ -41,6 +44,8 @@ Or give it commands:-
 ```
 bun naddu.js uci ucinewgame "position startpos" "go depth 8"
 ```
+
+## Creating binaries
 
 You can create executables using `Bun`:-
 
