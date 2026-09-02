@@ -2,7 +2,8 @@
 
 # 2000 game match, dev naddu.js v releases/naddu.js, 1+0.1, using fastchess.
 # Run from anywhere, e.g. ./tooling/match.sh
-# Override with env vars, e.g. ROUNDS=10 ./tooling/match.sh for a quick smoke test.
+# Override with env vars, e.g. ROUNDS=10 ./tooling/match.sh for a quick smoke test,
+# or BASE=/path/to/engine ./tooling/match.sh to play against another uci engine.
 
 set -e
 
@@ -22,8 +23,14 @@ pgn=tooling/match.pgn
 dev=/tmp/naddu-dev
 base=/tmp/naddu-base
 
-bun build naddu.js          --compile --minify --outfile $dev  > /dev/null
-bun build releases/naddu.js --compile --minify --outfile $base > /dev/null
+bun build naddu.js --compile --minify --outfile $dev > /dev/null
+
+# BASE=/path/to/engine plays dev against any uci binary instead of the release
+if [ -n "$BASE" ]; then
+  base=$BASE
+else
+  bun build releases/naddu.js --compile --minify --outfile $base > /dev/null
+fi
 
 $dev  uci q > /dev/null
 $base uci q > /dev/null

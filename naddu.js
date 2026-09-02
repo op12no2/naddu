@@ -1280,6 +1280,28 @@ const EGB = Array(7);
 
 const counts = new Uint8Array(16);
 
+// king shelter penalty by how many ranks ahead of the king the nearest pawn is on a file, 3 = none or far
+// only while the other side still has a queen https://www.chessprogramming.org/King_Safety#PawnShield
+const SHELTER = new Int16Array([0, 4, 8, 12]);
+
+// penalty for the pawns ahead of a king on its file (counted twice) and the two beside it
+function shelter(board, king, pawn, dir) {
+  const kf = Math.min(Math.max(king & 7, 1), 6);
+  let penalty = 0;
+  for (let f = kf - 1; f <= kf + 1; f++) {
+    let sq = (king & 0x70) + f;
+    let d = 0;
+    while (d < 3) {
+      sq += dir;
+      if (sq & 0x88 || board[sq] === pawn)
+        break;
+      d++;
+    }
+    penalty += SHELTER[d] * (f === kf ? 2 : 1);
+  }
+  return penalty;
+}
+
 // bonus for the side to move https://www.chessprogramming.org/Tempo
 const TEMPO = 10;
 
@@ -1332,6 +1354,12 @@ function evaluate(node) {
       egW += EGW[type][sq];
     }
   }
+
+  // king shelter, middlegame only, and only against a queen
+  if (counts[QUEEN | BLACK])
+    mgW -= shelter(board, pos.kings[0], PAWN, 16);
+  if (counts[QUEEN])
+    mgB -= shelter(board, pos.kings[1], PAWN | BLACK, -16);
 
   const n = nw + nb; // number of pieces on board
 

@@ -88,9 +88,10 @@ engine and the next match measures only the next feature.
 
 ## todo
 
+- add the uci command to change tt size - with a default of 16Mb.
 - passed pawns in eval - tried Sep 2026 (per-file rank tracking, bonus 0/0/5/10/20/40/60 mg, 0/5/15/30/50/85/130 eg by rank): -19 +/- 12 Elo, rejected. PeSTO PSTs already reward advanced pawns and eval got 30% slower. A retry needs a different design, not smaller numbers.
 - mobility in eval - tried Sep 2026 together with fruit-style king zone attacks (one ray walk per piece in evaluate, mobility relative to a baseline, N/B/R/Q attack units 2/2/3/5 with a weight by attacker count): -24 +/- 12 Elo, rejected. The ray walk costs ~37% nps and the terms did not earn it back at 1+0.1. Any retry needs attack tables or a much cheaper approximation.
-- king safety in eval - pawn shelter tried Sep 2026 (fruit-style, 3 files, penalty 0/8/16/25 by pawn distance, king file x2, mg only): -11 +/- 12 Elo and 5% slower, rejected. The attack half needs mobility-style ray walking which costs ~37% nps, see mobility.
+- king safety in eval - pawn shelter v1 (0/8/16/25 by pawn distance, always on): -11 +/- 12, rejected. v2 (halved to 0/4/8/12, only while the opponent has a queen): +6 +/- 12, accepted Sep 2026. The attack half needs mobility-style ray walking which costs ~37% nps, see mobility.
 - lmp - tried Sep 2026 (non-PV, depth <= 3, skip quiet moves after 3 + 3*depth*depth): -4 +/- 11 Elo, neutral, left out as not worth the code on top of futility pruning
 
 always add a link to the chess programming wiki when adding a new feature.
