@@ -1826,6 +1826,12 @@ function search(depth, ply, alpha, beta) {
 
     numMoves++;
 
+    // futility pruning - at low depth skip quiet moves when the static eval is well below alpha
+    // https://www.chessprogramming.org/Futility_Pruning
+    if (!isPV && !inCheck && depth <= 3 && numMoves > 1 && Math.abs(alpha) < TT_MATE_BOUND
+        && !(move & (MOVE_FLAG_CAPTURE | MOVE_PROMO_MASK)) && ev + 100 * depth <= alpha)
+      continue;
+
     let score;
 
     if (numMoves === 1) {
