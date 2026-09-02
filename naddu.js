@@ -60,10 +60,14 @@ function posSet(pos, other) {
   pos.hmc = other.hmc;
 }
 
+let positionSet = 0; // so go can init to startpos if the user forgets
+
 function position(fen, moves) {
 
   const node = nodes[0];
   const pos = node.pos;
+
+  positionSet = 1;
 
   posClear(pos);
 
@@ -1477,7 +1481,7 @@ function tcInit(tokens) {
   let winc = 0;
   let binc = 0;
   let movestogo = 30; // Default to 30 moves if not specified
-  let movetime = 0;
+  let movetime = tokens.length === 1 ? 100 : 0; // bare go = quick search
   let infinite = false;
 
   // Parse tokens
@@ -2080,6 +2084,10 @@ function execTokens(tokens) {
 
     case 'go':
     case 'g':
+      if (!positionSet) { // not uci but users do it
+        newGame();
+        position(STARTPOS);
+      }
       tcInit(tokens);
       go();
       break;  

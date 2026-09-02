@@ -82,9 +82,6 @@ PGN is saved to `tooling/match.pgn` for style analysis.
 - lmr
 - lmp
 - futility pruning
-- auto init to new game and startpos
-- if go arrives before any ucinewgame or position, behave as if both had been sent
-- if go arrives alone do a 100ms search
 
 ## claude suggestions
 
