@@ -88,7 +88,7 @@ engine and the next match measures only the next feature.
 
 ## todo
 
-- passed pawns in eval
+- passed pawns in eval - tried Sep 2026 (per-file rank tracking, bonus 0/0/5/10/20/40/60 mg, 0/5/15/30/50/85/130 eg by rank): -19 +/- 12 Elo, rejected. PeSTO PSTs already reward advanced pawns and eval got 30% slower. A retry needs a different design, not smaller numbers.
 - mobility in eval
 - king safety in eval
 - lmp
@@ -99,10 +99,9 @@ always add a link to the chess programming wiki when adding a new feature.
 
 ## claude suggestions
 
-Soft time limit, null move pruning, lmr and aspiration windows are done (Sep 2026). Remaining:
-
-1. Passed pawns in eval. The one eval feature that reliably moves the needle in a PST-only engine. Mobility and king
-   safety are bigger code and noisier to test.
+Soft time limit, null move pruning, lmr and aspiration windows are done (Sep 2026). Passed pawns was tried and
+rejected, see todo. Nothing else pending from Claude; mobility and king safety are the next eval candidates but are
+bigger code and noisier to test.
 
 ## references
 
