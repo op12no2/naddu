@@ -128,10 +128,10 @@ function position(fen, moves) {
 }
 
 function printBoard() {
-  
+
   const node = nodes[0];
   const pos = node.pos;
-  
+
   const pieces = '.PNBRQK..pnbrqk';
   const files = 'abcdefgh';
 
@@ -196,6 +196,7 @@ function nodeInitOnce() {
     nodes[i].pos = new Pos();
   }
 }
+
 var rand32Seed = 1234567890;
 
 function rand32() {
@@ -271,6 +272,7 @@ function zobRebuild(pos) {
   pos.hashHi = hi >>> 0;
 
 }
+
 // Repetition detection using flat history array
 // Stores [hashLo, hashHi] pairs for each position
 
@@ -325,6 +327,7 @@ function repRecord(pos, ply) {
   repHistory[idx] = pos.hashLo;
   repHistory[idx + 1] = pos.hashHi;
 }
+
 const TT_EXACT = 1;
 const TT_ALPHA = 2;
 const TT_BETA = 3;
@@ -518,6 +521,7 @@ function isAttacked(pos, sq, byColor) {
 
   return 0;
 }
+
 function genMoves(node) {
   node.numMoves = 0;
   genCaptures(node);
@@ -843,7 +847,7 @@ function rankQuiets(node) {
       const to = move & 0xff;
       const piece = board[from];
       ranks[i] = pieceHistory[piece][to];
-    }   
+    }
   }
 }
 
@@ -972,11 +976,12 @@ function getNextMoveQS(node) {
     }
   }
 }
+
 function moveIsProbablyLegal(node, move) {
 
   if (move === 0)
     return 0;
-  
+
   const pos = node.pos;
   const board = pos.board;
   const stm = pos.stm;
@@ -985,19 +990,19 @@ function moveIsProbablyLegal(node, move) {
   const to = move & 0xff;
 
   // from and to must be on board
-  if ((from | to) & 0x88) 
+  if ((from | to) & 0x88)
     return 0;
 
   // must have our piece on from square
   const piece = board[from];
-  if (!piece) 
+  if (!piece)
     return 0;
-  if ((piece & BLACK) !== stm) 
+  if ((piece & BLACK) !== stm)
     return 0;
 
   // to square must be empty or enemy piece
   const target = board[to];
-  if (target && (target & BLACK) === stm) 
+  if (target && (target & BLACK) === stm)
     return 0;
 
   return move;
@@ -1024,6 +1029,7 @@ function formatMove(move) {
 
   return moveStr;
 }
+
 const RIGHTS_MASK = new Uint8Array(128);
 RIGHTS_MASK.fill(0xF);
 RIGHTS_MASK[0x00] = 0xF ^ RIGHTS_Q;
@@ -1255,12 +1261,12 @@ function evaluate(node) {
   if (n === 2) {
     node.draw = 1;
     return 0; // K + k
-  }  
+  }
   else if (n === 3) {
     if (counts[KNIGHT] || counts[BISHOP] || counts[KNIGHT|BLACK] || counts[BISHOP|BLACK]) {
       node.draw = 1;
       return 0; // Kk + BbNn
-    }   
+    }
   }
 
   const mgScore = pos.stm ? mgB - mgW : mgW - mgB;
@@ -1430,6 +1436,7 @@ function evalInitOnce() {
     }
   }
 }
+
 class TimeControl {
 
   constructor() {
@@ -1549,6 +1556,7 @@ function tcInit(tokens) {
     tc.maxDepth = MAX_PLY;
 
 }
+
 function qsearch(ply, alpha, beta) {
 
   if (ply === MAX_PLY - 1)
@@ -1569,7 +1577,7 @@ function qsearch(ply, alpha, beta) {
   const pos = node.pos;
 
   node.pvLen = 0;
-  
+
   // check tt
   const ttIndex = ttGet(pos);
   if (ttIndex >= 0) {
@@ -1631,11 +1639,11 @@ function search(depth, ply, alpha, beta) {
     return evaluate(nodes[ply]);
 
   const tc = timeControl;
-  
+
   tcCheck();
   if (tc.finished)
     return 0;
-  
+
   const node = nodes[ply];
   const pos = node.pos;
   const stmi = pos.stm >> 3;
@@ -1656,7 +1664,7 @@ function search(depth, ply, alpha, beta) {
   const isPV = isRoot || (beta - alpha !== 1);
 
   node.pvLen = 0;
-  
+
   // record position for repetition detection
   repRecord(pos, ply);
 
@@ -1669,7 +1677,7 @@ function search(depth, ply, alpha, beta) {
       return score;
     }
   }
-  
+
   // check for draws
   const ev = evaluate(node); // sets node.draw
   if (!isRoot && (node.draw || isDraw(pos, ply)))
@@ -1757,6 +1765,7 @@ function search(depth, ply, alpha, beta) {
   return bestScore;
 
 }
+
 // node.pv = move followed by child's pv
 function pvCopy(node, child, move) {
   const pv = node.pv;
@@ -1790,15 +1799,15 @@ function newGame() {
 }
 
 function go() {
-  
+
   const tc = timeControl;
-  
+
   for (let d = 1; d <= tc.maxDepth; d++) {
     const bm = tc.bestMove;
     const score = search(d, 0, -Infinity, Infinity);
     if (tc.finished) {
       if (bm)
-        tc.bestMove = bm;  
+        tc.bestMove = bm;
       break;
     }
     const time = now() - tc.startTime;
@@ -1807,7 +1816,7 @@ function go() {
     if (tc.softTime && now() >= tc.softTime)
       break;
   }
-  
+
   uciWrite(`bestmove ${formatMove(tc.bestMove)}`);
 }
 
@@ -1867,6 +1876,7 @@ function perft (depth, ply) {
   return tot;
 
 }
+
 const PERFT_POSITIONS = [
   ['rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', 2, 400, 'cpw-pos1-2'],
   ['4k3/8/8/8/8/8/R7/R3K2R w Q - 0 1', 3, 4729, 'castling-2'],
@@ -1971,6 +1981,7 @@ function perftTests() {
 
   uciWrite(`passed ${passed} failed ${failed} nodes ${totalNodes.toLocaleString()}  elapsed ${(elapsed / 1000).toFixed(2)}s nps ${nps.toLocaleString()}`);
 }
+
 const BENCH_POSITIONS = [
   "r3k2r/2pb1ppp/2pp1q2/p7/1nP1B3/1P2P3/P2N1PPP/R2QK2R w KQkq a6 0 14",
   "4rrk1/2p1b1p1/p1p3q1/4p3/2P2n1p/1P1NR2P/PB3PP1/3R1QK1 b - - 2 24",
@@ -2047,6 +2058,7 @@ function bench() {
 
   uciWrite(`elapsed ${(elapsed / 1000).toFixed(2)}s nodes ${totalNodes.toLocaleString()} nps ${nps.toLocaleString()}`);
 }
+
 function evalTests() {
 
   for (let i = 0; i < BENCH_POSITIONS.length; i++) {
@@ -2057,6 +2069,7 @@ function evalTests() {
   }
 
 }
+
 function execString (cmd) {
   const tokens = cmd.trim().split(/\s+/).filter(t => t.length > 0);
   if (tokens.length > 0) {
@@ -2074,7 +2087,7 @@ function execTokens(tokens) {
 
     case 'stop':
       break;
-        
+
     case 'uci':
       uciWrite('id name Naddu 1');
       uciWrite('id author Colin Jenkins');
@@ -2090,10 +2103,10 @@ function execTokens(tokens) {
       }
       tcInit(tokens);
       go();
-      break;  
+      break;
 
     case 'isready':
-      uciWrite('readyok');  
+      uciWrite('readyok');
       break;
 
     case 'position':
@@ -2121,12 +2134,12 @@ function execTokens(tokens) {
       position(fen, moves);
       break;
     }
-    
+
     case 'board':
     case 'b':
       printBoard();
       break;
-   
+
     case 'perft':
     case 'f': {
         const depth = parseInt(tokens[1]);
@@ -2165,7 +2178,7 @@ function execTokens(tokens) {
       break;
 
     default:
-      uciWrite('?');  
+      uciWrite('?');
 
   }
 }
