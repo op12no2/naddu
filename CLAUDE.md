@@ -45,6 +45,12 @@ PGN is saved to `tooling/match.pgn` for style analysis.
 - extra args are passed to fastchess
 - speed-only patches (bench node count unchanged) don't need a match, compare bench nps
 
+## git workflow
+
+Claude is free to commit and push without asking. Put the match result in the commit message.
+When pushing, first copy `naddu.js` to `releases/naddu.js` so the release is always the pushed
+engine and the next match measures only the next feature.
+
 ## data structures
 
 - WHITE, BLACK: 0, 8
