@@ -36,7 +36,7 @@ Try this example here: https://op12no2.github.io/naddu/examples/hello_world.html
 - [play](https://op12no2.github.io/naddu/examples/play.html) - play against Naddu at five strength levels, or watch Naddu play itself.
 - [endgames](https://op12no2.github.io/naddu/examples/endgames.html) - plays out random K+Q v K and K+R v K positions and checks white mates.
 - [analysis](https://op12no2.github.io/naddu/examples/analysis.html) - set up a position by dragging pieces, presets or FEN, then analyse it.
-- [openings](https://op12no2.github.io/naddu/examples/openings.html) - twenty workers search each first move, rank them, and play through the lines found.
+- [openings](https://op12no2.github.io/naddu/examples/openings.html) - twenty workers search each first move deeper and deeper, then rank them.
 - [perft](https://op12no2.github.io/naddu/examples/perft.html) - move generator node counts against the known values, plus your own.
 
 ## Command line

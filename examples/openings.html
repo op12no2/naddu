@@ -57,18 +57,12 @@
 
 <h1>Openings</h1>
 
-<p>Twenty workers, one for each legal first move. Each searches the position after its move and the boards are sorted
-by the score, so the top left is the first move Naddu likes best. Then each board plays through the line the search found.</p>
+<p>Twenty workers, one for each legal first move. Each searches the position after its move at depth 1, then 2, and
+so on, showing the end of the line it found each time. When they all reach the chosen depth the boards are sorted
+by score, so the top left is the first move Naddu likes best.</p>
 
 <div id="controls">
-  <label>Nodes <select id="nodes">
-    <option>2000</option>
-    <option selected>10000</option>
-    <option>50000</option>
-    <option>100000</option>
-    <option>250000</option>
-    <option>500000</option>
-  </select></label>
+  <label>Depth <select id="depth"></select></label>
   <button id="start">Start</button>
 </div>
 
@@ -90,14 +84,21 @@ const FIRST_MOVES = [
   'f2f3', 'f2f4', 'g2g3', 'g2g4', 'h2h3', 'h2h4', 'b1a3', 'b1c3', 'g1f3', 'g1h3'
 ];
 
-const STEP_MS = 600; // pause between pv moves when playing through
-
 const boardsEl = document.getElementById('boards');
 const summaryEl = document.getElementById('summary');
 const resultsEl = document.getElementById('results');
+const depthEl = document.getElementById('depth');
+
+for (let d = 1; d <= 14; d++) {
+  const opt = document.createElement('option');
+  opt.textContent = d;
+  if (d === 8)
+    opt.selected = true;
+  depthEl.appendChild(opt);
+}
 
 let games = [];
-let scored = 0;
+let done = 0;
 
 function makeGame(first) {
   const el = document.createElement('div');
@@ -117,7 +118,7 @@ function makeGame(first) {
   el.appendChild(caption);
   el.appendChild(board);
   boardsEl.appendChild(el);
-  return {first: first, el: el, board: board, caption: caption, score: 0, pv: [], shown: 0, rows: [], worker: null};
+  return {first: first, el: el, board: board, caption: caption, depth: 0, score: 0, pv: [], rows: [], worker: null};
 }
 
 function show(game) {
@@ -128,22 +129,15 @@ function show(game) {
   }
 }
 
-// ask the worker to draw the position after the first n moves of first + pv
-function draw(game, n) {
-  game.worker.postMessage('position startpos moves ' + game.first + ' ' + game.pv.slice(0, n).join(' '));
-  game.worker.postMessage('board');
+function caption(game) {
+  game.caption.textContent = game.first + '  d' + game.depth + '  ' + (game.score > 0 ? '+' : '') + game.score;
 }
 
-// play through the pv one move at a time
-function animate(game) {
-  if (game.shown > game.pv.length) {
-    game.worker.terminate();
-    game.worker = null;
-    return;
-  }
-  draw(game, game.shown);
-  game.shown++;
-  setTimeout(function() { animate(game); }, STEP_MS);
+// search the position after the first move one ply deeper than last time
+function deeper(game) {
+  game.depth++;
+  game.worker.postMessage('position startpos moves ' + game.first);
+  game.worker.postMessage('go depth ' + game.depth);
 }
 
 function rank() {
@@ -151,10 +145,11 @@ function rank() {
   let text = '';
   for (let i = 0; i < games.length; i++) {
     const g = games[i];
-    g.caption.textContent = (i + 1) + '. ' + g.first + '  ' + (g.score > 0 ? '+' : '') + g.score;
+    g.caption.textContent = (i + 1) + '. ' + g.caption.textContent;
     boardsEl.appendChild(g.el); // re-append in ranked order
     text += g.caption.textContent + '  ' + g.pv.join(' ') + '\n';
-    animate(g);
+    g.worker.terminate();
+    g.worker = null;
   }
   resultsEl.textContent = text;
   summaryEl.textContent = 'Naddu likes ' + games[0].first + ' best and ' + games[games.length - 1].first + ' least';
@@ -164,8 +159,17 @@ function onMessage(game, line) {
   const row = line.match(/^([1-8])  ((?:[rnbqkpRNBQKP.] ){8})$/);
   if (row) {
     game.rows[8 - parseInt(row[1])] = row[2].trim().split(' ');
-    if (row[1] === '1')
+    if (row[1] === '1') {
       show(game);
+      if (game.depth < parseInt(depthEl.value)) {
+        deeper(game);
+      }
+      else {
+        done++;
+        if (done === games.length)
+          rank();
+      }
+    }
   }
   else if (line.startsWith('info ')) {
     const m = line.match(/score (cp|mate) (-?\d+) .* pv (.*)$/);
@@ -175,10 +179,10 @@ function onMessage(game, line) {
     }
   }
   else if (line.startsWith('bestmove ')) {
-    game.caption.textContent = game.first + '  ' + (game.score > 0 ? '+' : '') + game.score;
-    scored++;
-    if (scored === games.length)
-      rank();
+    // show the end of the line found, then go deeper
+    caption(game);
+    game.worker.postMessage('position startpos moves ' + game.first + ' ' + game.pv.join(' '));
+    game.worker.postMessage('board');
   }
 }
 
@@ -190,16 +194,14 @@ function start() {
   summaryEl.textContent = '';
   resultsEl.textContent = '';
   games = [];
-  scored = 0;
+  done = 0;
   for (let i = 0; i < FIRST_MOVES.length; i++) {
     const game = makeGame(FIRST_MOVES[i]);
     game.worker = new Worker('../naddu.js');
     game.worker.onmessage = function(e) { onMessage(game, e.data); };
     game.worker.postMessage('ucinewgame');
-    game.worker.postMessage('position startpos moves ' + game.first);
-    game.worker.postMessage('board');
-    game.worker.postMessage('go nodes ' + document.getElementById('nodes').value);
     games.push(game);
+    deeper(game);
   }
 }
 
