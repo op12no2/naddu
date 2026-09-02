@@ -1415,7 +1415,8 @@ class TimeControl {
     this.maxDepth = 0;
     this.selDepth = 0;
     this.startTime = 0;
-    this.finishTime = 0;
+    this.softTime = 0;   // don't start a new iteration after this
+    this.finishTime = 0; // abort search at this
     this.finished = 0;
   }
 }
@@ -1430,6 +1431,7 @@ function tcClear() {
   tc.maxDepth = 0;
   tc.selDepth = 0;
   tc.startTime = now() | 0;
+  tc.softTime = 0;
   tc.finishTime = 0;
   tc.finished = 0;
 }
@@ -1510,8 +1512,10 @@ function tcInit(tokens) {
     const increment = isWhite ? winc : binc;
 
     // Time allocation: timeLeft / movestogo + increment / 2
+    // The soft limit stops new iterations, the hard limit aborts the search
     const allocatedTime = (timeLeft / movestogo) + (increment / 2);
-    tc.finishTime = tc.startTime + allocatedTime;
+    tc.softTime = tc.startTime + allocatedTime / 2;
+    tc.finishTime = tc.startTime + Math.min(allocatedTime * 3, timeLeft / 2);
   }
 
   // Set default max depth if not specified
@@ -1762,6 +1766,8 @@ function go() {
     const time = now() - tc.startTime;
     const nps = (1000 * tc.nodes / time) | 0;
     uciWrite(`info depth ${d} seldepth ${tc.selDepth} score ${formatScore(score)} nodes ${tc.nodes} time ${time} nps ${nps} pv ${formatPV(nodes[0])}`);
+    if (tc.softTime && now() >= tc.softTime)
+      break;
   }
   
   uciWrite(`bestmove ${formatMove(tc.bestMove)}`);
