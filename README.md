@@ -4,7 +4,9 @@ Naddu is a Javascript UCI chess engine.
 
 It can be easily included in your web pages.
 
-The code is written in a stratght-forward manner and deliberately easy to tweak.
+All you need is `naddu.js` from the repo root.
+
+The code is written in a straight-forward manner and deliberately easy to tweak.
 
 ## Hello world
 
