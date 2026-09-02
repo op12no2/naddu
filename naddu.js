@@ -1343,6 +1343,25 @@ function evaluate(node) {
     }
   }
 
+  // mop-up: with no pawns the side well ahead pushes the other king to the edge and brings its king up
+  // https://www.chessprogramming.org/Mop-up_Evaluation
+  if (counts[PAWN] + counts[PAWN | BLACK] === 0 && Math.abs(egW - egB) >= 200) {
+    const wk = pos.kings[0];
+    const bk = pos.kings[1];
+    const lk = egW > egB ? bk : wk;
+    const centre = (Math.abs(2 * (lk & 7) - 7) + Math.abs(2 * (lk >> 4) - 7) - 2) >> 1; // 0 centre to 6 corner
+    const apart = Math.abs((wk & 7) - (bk & 7)) + Math.abs((wk >> 4) - (bk >> 4));     // manhattan 2 to 14
+    const bonus = 10 * centre + 8 * (14 - apart);
+    if (egW > egB) {
+      mgW += bonus;
+      egW += bonus;
+    }
+    else {
+      mgB += bonus;
+      egB += bonus;
+    }
+  }
+
   const mgScore = pos.stm ? mgB - mgW : mgW - mgB;
   const egScore = pos.stm ? egB - egW : egW - egB;
 
