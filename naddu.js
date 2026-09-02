@@ -197,7 +197,7 @@ function nodeInitOnce() {
   }
 }
 
-var rand32Seed = 1234567890;
+let rand32Seed = 1234567890;
 
 function rand32() {
   rand32Seed ^= rand32Seed << 13;
@@ -218,20 +218,20 @@ const zobPiecesHi = new Array(16);
 
 function zobInitOnce() {
 
-  for (var i = 0; i < 16; i++) {
+  for (let i = 0; i < 16; i++) {
     zobRightsLo[i] = rand32();
     zobRightsHi[i] = rand32();
   }
 
-  for (var i = 0; i < 128; i++) {
+  for (let i = 0; i < 128; i++) {
     zobEpLo[i] = rand32();
     zobEpHi[i] = rand32();
   }
 
-  for (var i = 0; i < 16; i++) {
+  for (let i = 0; i < 16; i++) {
     zobPiecesLo[i] = new Uint32Array(128);
     zobPiecesHi[i] = new Uint32Array(128);
-    for (var j = 0; j < 128; j++) {
+    for (let j = 0; j < 128; j++) {
       zobPiecesLo[i][j] = rand32();
       zobPiecesHi[i][j] = rand32();
     }
@@ -241,13 +241,13 @@ function zobInitOnce() {
 
 function zobRebuild(pos) {
 
-  var lo = 0;
-  var hi = 0;
+  let lo = 0;
+  let hi = 0;
 
-  for (var rank = 0; rank < 8; rank++) {
-    for (var file = 0; file < 8; file++) {
-      var sq = rank * 16 + file;
-      var piece = pos.board[sq];
+  for (let rank = 0; rank < 8; rank++) {
+    for (let file = 0; file < 8; file++) {
+      let sq = rank * 16 + file;
+      let piece = pos.board[sq];
       if (piece) {
         lo ^= zobPiecesLo[piece][sq];
         hi ^= zobPiecesHi[piece][sq];
@@ -560,7 +560,7 @@ function genCaptures(node) {
   const stm = pos.stm;
   const nstm = stm ^ BLACK;
 
-  var numMoves = node.numMoves;
+  let numMoves = node.numMoves;
 
   for (let sq = 0; sq < 128; sq++) {
     if (sq & 0x88) continue;
@@ -686,7 +686,7 @@ function genQuiets(node) {
   const board = pos.board;
   const stm = pos.stm;
 
-  var numMoves = node.numMoves;
+  let numMoves = node.numMoves;
 
   for (let sq = 0; sq < 128; sq++) {
     if (sq & 0x88) continue;
@@ -1059,8 +1059,8 @@ function makeMove(move, pos) {
   const pieceZobLo = zobPiecesLo[piece];
   const pieceZobHi = zobPiecesHi[piece];
 
-  var lo = pos.hashLo;
-  var hi = pos.hashHi;
+  let lo = pos.hashLo;
+  let hi = pos.hashHi;
 
   // remove piece from 'from' square
   lo ^= pieceZobLo[from];
