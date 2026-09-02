@@ -1,6 +1,7 @@
 function now() {
   return performance.now() | 0;
 }
+
 const WHITE = 0;
 const BLACK = 8;
 
@@ -177,6 +178,8 @@ class Node {
     this.ttMove = 0;
     this.killer = 0;
     this.draw = 0;
+    this.pv = new Uint32Array(MAX_PLY); // triangular pv, copied up from child on alpha improvement
+    this.pvLen = 0;
   }
 }
 
@@ -1176,6 +1179,10 @@ const EGB = Array(7);
 
 const counts = new Uint8Array(16);
 
+//
+// evaluate() uses PESTO values https://chessprogramming.org/PeSTO%27s_Evaluation_Function
+//
+
 function evaluate(node) {
 
   node.draw = 0;
@@ -1406,6 +1413,7 @@ class TimeControl {
     this.nodes = 0;
     this.maxNodes = 0;
     this.maxDepth = 0;
+    this.selDepth = 0;
     this.startTime = 0;
     this.finishTime = 0;
     this.finished = 0;
@@ -1420,6 +1428,7 @@ function tcClear() {
   tc.nodes = 0;
   tc.maxNodes = 0;
   tc.maxDepth = 0;
+  tc.selDepth = 0;
   tc.startTime = now() | 0;
   tc.finishTime = 0;
   tc.finished = 0;
@@ -1524,8 +1533,13 @@ function qsearch(ply, alpha, beta) {
 
   tc.nodes++;
 
+  if (ply > tc.selDepth)
+    tc.selDepth = ply;
+
   const node = nodes[ply];
   const pos = node.pos;
+
+  node.pvLen = 0;
   
   // check tt
   const ttIndex = ttGet(pos);
@@ -1611,6 +1625,8 @@ function search(depth, ply, alpha, beta) {
   const oAlpha = alpha;
   const isRoot = ply === 0;
   const isPV = isRoot || (beta - alpha !== 1);
+
+  node.pvLen = 0;
   
   // record position for repetition detection
   repRecord(pos, ply);
@@ -1678,6 +1694,8 @@ function search(depth, ply, alpha, beta) {
         tc.bestMove = bestMove;
       }
       alpha = bestScore;
+      if (isPV)
+        pvCopy(node, nextNode, bestMove);
     }
 
     if (alpha >= beta) {
@@ -1696,6 +1714,33 @@ function search(depth, ply, alpha, beta) {
   return bestScore;
 
 }
+// node.pv = move followed by child's pv
+function pvCopy(node, child, move) {
+  const pv = node.pv;
+  const childPV = child.pv;
+  const len = child.pvLen;
+  pv[0] = move;
+  for (let i = 0; i < len; i++)
+    pv[i + 1] = childPV[i];
+  node.pvLen = len + 1;
+}
+
+function formatPV(node) {
+  let str = '';
+  for (let i = 0; i < node.pvLen; i++)
+    str += (i ? ' ' : '') + formatMove(node.pv[i]);
+  return str;
+}
+
+// mate in n moves (not plies) as per uci, negative if being mated
+function formatScore(score) {
+  if (score >= TT_MATE_BOUND)
+    return 'mate ' + ((MATE - score + 1) >> 1);
+  if (score <= -TT_MATE_BOUND)
+    return 'mate ' + (-((MATE + score + 1) >> 1));
+  return 'cp ' + score;
+}
+
 function newGame() {
   ttClear();
   repClear();
@@ -1713,8 +1758,9 @@ function go() {
         tc.bestMove = bm;  
       break;
     }
-    const nps = (1000 * tc.nodes / (now() - tc.startTime)) | 0;
-    uciWrite(`info depth ${d} score cp ${score} nodes ${tc.nodes} nps ${nps} pv ${formatMove(tc.bestMove)}`);
+    const time = now() - tc.startTime;
+    const nps = (1000 * tc.nodes / time) | 0;
+    uciWrite(`info depth ${d} seldepth ${tc.selDepth} score ${formatScore(score)} nodes ${tc.nodes} time ${time} nps ${nps} pv ${formatPV(nodes[0])}`);
   }
   
   uciWrite(`bestmove ${formatMove(tc.bestMove)}`);
@@ -2074,6 +2120,7 @@ function execTokens(tokens) {
 
   }
 }
+
 const IS_NODE = typeof process !== 'undefined' && process.versions && process.versions.node;
 
 function uciWrite(data) {
