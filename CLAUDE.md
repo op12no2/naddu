@@ -85,7 +85,6 @@ PGN is saved to `tooling/match.pgn` for style analysis.
 - passed pawns in eval
 - mobility in eval
 - king safety in eval
-- aspiration window to go()
 - lmp
 - futility pruning
 - stop early if mate found (more fun at the risk of finding a faster mate)
@@ -94,10 +93,9 @@ always add a link to the chess programming wiki when adding a new feature.
 
 ## claude suggestions
 
-Soft time limit, null move pruning and lmr are done (Sep 2026). Remaining, in suggested order:
+Soft time limit, null move pruning, lmr and aspiration windows are done (Sep 2026). Remaining:
 
-1. Aspiration windows. Small gain, small code.
-2. Passed pawns in eval. The one eval feature that reliably moves the needle in a PST-only engine. Mobility and king
+1. Passed pawns in eval. The one eval feature that reliably moves the needle in a PST-only engine. Mobility and king
    safety are bigger code and noisier to test.
 
 ## references

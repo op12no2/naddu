@@ -1871,9 +1871,22 @@ function go() {
 
   const tc = timeControl;
 
+  let score = 0;
+
   for (let d = 1; d <= tc.maxDepth; d++) {
     const bm = tc.bestMove;
-    const score = search(d, 0, -Infinity, Infinity);
+    // aspiration window around the previous score, widened on failure https://www.chessprogramming.org/Aspiration_Windows
+    let delta = 30;
+    let alpha = d >= 4 ? score - delta : -Infinity;
+    let beta  = d >= 4 ? score + delta :  Infinity;
+    while (true) {
+      score = search(d, 0, alpha, beta);
+      if (tc.finished || (score > alpha && score < beta))
+        break;
+      delta *= 2;
+      alpha = delta > 500 ? -Infinity : score - delta;
+      beta  = delta > 500 ?  Infinity : score + delta;
+    }
     if (tc.finished) {
       if (bm)
         tc.bestMove = bm;
