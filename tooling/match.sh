@@ -8,6 +8,11 @@ set -e
 
 cd "$(dirname "$0")/.."
 
+if pgrep -f "tooling/fastchess -engine" > /dev/null; then
+  echo "a match is already running"
+  exit 1
+fi
+
 rounds=${ROUNDS:-1000}          # 2 games per round with -repeat
 concurrency=${CONCURRENCY:-16}
 tc=${TC:-1+0.1}
