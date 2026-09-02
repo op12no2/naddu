@@ -13,13 +13,9 @@ I am not primarily chasing Elo, but more Elo is always nice.
 
 Simplicity is just as important.
 
-We can possibly create complex extra-naddu.js tooling to
-test, evaluate or even train the resulting simplicity within Naddu.
-But we do not expose to the user; i.e. keep it out of the repo.
-
-I like the repo being `naddu.js` and `naddu.html`.
-
 ## test
+
+`releases/naddu.js` contains the reference version we are aiming to improve.
 
 - `node naddu.js q` check for syntax errors
 - `node naddu.js bench` - total nodes and nps over 50 positions
@@ -29,6 +25,18 @@ I like the repo being `naddu.js` and `naddu.html`.
 - `node naddu.js "position startpos" "board"` show startpos board
 - `node naddu.js et` eval tests (very quick)
 - `node naddu.js pt` perft tests (takes ~8 mins)
+
+## match testing
+
+`./tooling/match.sh` is the acceptance test: 2000 games at 1+0.1, `naddu.js` v `releases/naddu.js`,
+via fastchess using bun binaries. One run, verdict is final, no reruns, no SPRT.
+Accept a patch if it is not clearly worse. Test per feature, never tune parameters.
+PGN is saved to `tooling/match.pgn` for style analysis.
+
+- `./tooling/match.sh` full 2000 game match (~20 mins)
+- `ROUNDS=4 CONCURRENCY=8 ./tooling/match.sh` quick 8 game smoke test
+- extra args are passed to fastchess
+- speed-only patches (bench node count unchanged) don't need a match, compare bench nps
 
 ## data structures
 
