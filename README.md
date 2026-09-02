@@ -4,6 +4,8 @@ Naddu is a Javascript UCI chess engine.
 
 It can be easily included in your web pages.
 
+The code is written in a stratght-forward way and deliberately easy to tweak.
+
 ```
 const naddu = new Worker('naddu.js');
 const ucioutput = document.getElementById('ucioutput');
