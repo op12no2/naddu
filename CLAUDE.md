@@ -88,18 +88,13 @@ PGN is saved to `tooling/match.pgn` for style analysis.
 
 ## claude suggestions
 
- 1. Soft time limit in the go loop. Right now the search runs iterations until the hard deadline and then throws away
-     the partial iteration. Skipping the next iteration when more than roughly half the budget is used keeps the engine
-     from wasting time and lets you allocate a bit more per move. This is the biggest cheap strength gain available and
-     doesn't touch search.
-  2. Null move pruning. Already on your todo. Around ten lines and typically the biggest single search win after the TT.
-     Needs a "no null move twice in a row" flag on the node and a skip when the side to move has only pawns.
-  3. Late move reductions. Also on your todo. Reduce quiet, non-killer, non-check moves after the first few by one ply
-     at depth 3 or more, re-search at full depth if they beat alpha. The move ordering stages you already have make this
-     easy.
-  4. Aspiration windows. Small gain, small code, but comes after the two above because those change the score behaviour.
-  5. Passed pawns in eval. The one eval feature that reliably moves the needle in a PST-only engine. Mobility and king
-     safety are bigger code and noisier to test.
+Soft time limit and null move pruning are done (Sep 2026). Remaining, in suggested order:
+
+1. Late move reductions. Reduce quiet, non-killer, non-check moves after the first few by one ply at depth 3 or more,
+   re-search at full depth if they beat alpha. The move ordering stages already there make this easy.
+2. Aspiration windows. Small gain, small code, but comes after lmr because that changes the score behaviour.
+3. Passed pawns in eval. The one eval feature that reliably moves the needle in a PST-only engine. Mobility and king
+   safety are bigger code and noisier to test.
 
 ## references
 
