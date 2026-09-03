@@ -10,6 +10,8 @@ The code is written in a straightforward style and deliberately easy to tweak.
 
 Strength is around 2400 Elo.
 
+The hash table defaults to 16 MB and can be set with `setoption name Hash value <mb>`.
+
 ## Hello world
 
 ```
