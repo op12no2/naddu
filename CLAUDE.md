@@ -64,7 +64,6 @@ engine and the next match measures only the next feature.
 - PAWN to KING: 1 to 6
 - board: 0x88 
 - moves: `(from square << 8) | to square | flags`
-- related files: `node.js`, `pos.js`, `gen.js`
 - TT uses 2 x Uint32 typed arrays
 
 ## useful expressions
