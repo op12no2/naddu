@@ -73,6 +73,5 @@ bun build naddu.js --compile --minify --target=bun-darwin-arm64  --outfile=naddu
 ```
 
 The Linux arm64 binary runs on a Raspberry Pi 3 or later with a 64-bit OS. Add `-musl` to
-the Linux targets for Alpine. Bun has no 32-bit targets, and microcontrollers like the ESP32
-are far too small for a full JavaScript engine.
+the Linux targets for Alpine. 
 
