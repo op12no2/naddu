@@ -6,9 +6,9 @@ It can be easily included in your web pages.
 
 All you need is `naddu.js` from the repo root.
 
-The code is written in a straight-forward manner and deliberately easy to tweak.
+The code is written in a straightforward style and deliberately easy to tweak.
 
-Strength is around 2300 Elo.
+Strength is around 2400 Elo.
 
 ## Hello world
 
