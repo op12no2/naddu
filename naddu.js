@@ -373,19 +373,34 @@ const TT_EXACT = 1;
 const TT_ALPHA = 2;
 const TT_BETA = 3;
 const TT_MATE_BOUND = 9900;
-const TT_SIZE = 1 << 20;
-const TT_MASK = TT_SIZE - 1;
+// 16 bytes per entry, size is set by the uci Hash option (MB) and rounded down to a power of 2
+const TT_DEFAULT_MB = 16;
+const TT_MIN_MB = 1;
+const TT_MAX_MB = 1024;
 
-const ttHashLo = new Uint32Array(TT_SIZE);
-const ttHashHi = new Uint32Array(TT_SIZE);
-const ttMove = new Uint32Array(TT_SIZE);
-const ttType = new Uint8Array(TT_SIZE);
-const ttScore = new Int16Array(TT_SIZE);
-const ttDepth = new Uint8Array(TT_SIZE);
+let TT_MASK = 0;
+
+let ttHashLo = null;
+let ttHashHi = null;
+let ttMove = null;
+let ttType = null;
+let ttScore = null;
+let ttDepth = null;
 
 const ttStats = {hits: 0};
 
-function ttInitOnce() {
+function ttInit(mb) {
+  mb = Math.min(Math.max(mb | 0, TT_MIN_MB), TT_MAX_MB);
+  let size = 1;
+  while (size * 2 * 16 <= mb * 1024 * 1024)
+    size *= 2;
+  TT_MASK = size - 1;
+  ttHashLo = new Uint32Array(size);
+  ttHashHi = new Uint32Array(size);
+  ttMove = new Uint32Array(size);
+  ttType = new Uint8Array(size);
+  ttScore = new Int16Array(size);
+  ttDepth = new Uint8Array(size);
 }
 
 function ttClear() {
@@ -2288,9 +2303,17 @@ function execTokens(tokens) {
     case 'uci':
       uciWrite('id name Naddu 1');
       uciWrite('id author Colin Jenkins and Claude');
-
+      uciWrite('option name Hash type spin default ' + TT_DEFAULT_MB + ' min ' + TT_MIN_MB + ' max ' + TT_MAX_MB);
       uciWrite('uciok');
       break;
+
+    case 'setoption': { // setoption name Hash value 64
+      const name = tokens.indexOf('name');
+      const value = tokens.indexOf('value');
+      if (name >= 0 && value > name && tokens[name + 1].toLowerCase() === 'hash')
+        ttInit(parseInt(tokens[value + 1]));
+      break;
+    }
 
     case 'go':
     case 'g':
@@ -2383,6 +2406,7 @@ function execTokens(tokens) {
     case 'help':
       uciWrite('uci                         show engine name and author');
       uciWrite('isready                     replies readyok');
+      uciWrite('setoption name Hash value <mb>   set the hash table size, default 16, 1 to 1024');
       uciWrite('ucinewgame (u)              clear the hash and history, do this before a new game');
       uciWrite('position (p) startpos       set up the start position, optionally followed by moves e2e4 e7e5 ...');
       uciWrite('position (p) fen <fen>      set up a position from a fen string, optionally followed by moves');
@@ -2428,7 +2452,7 @@ function uciQuit() {
 nodeInitOnce();
 evalInitOnce();
 zobInitOnce();
-ttInitOnce();
+ttInit(TT_DEFAULT_MB);
 historyInitOnce();
 
 if (IS_NODE) {
