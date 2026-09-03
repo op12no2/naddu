@@ -44,6 +44,12 @@ PGN is saved to `tooling/match.pgn` for style analysis.
 - `ROUNDS=4 CONCURRENCY=8 ./tooling/match.sh` quick 8 game smoke test
 - extra args are passed to fastchess
 - speed-only patches (bench node count unchanged) don't need a match, compare bench nps
+- `BASE=/path/to/engine ./tooling/match.sh` plays dev against any uci engine; `TIMEMARGIN=2500` for engines that overshoot the clock
+
+Strength estimate (Sep 3 2026, engine at commit aec6051, 2+0.2, 2000 games each, vs Stash with the user's ratings
+14=2058 15=2173 17=2297 18=2380): +260, +171, +92, +7 => about 2350 at this tc. Old Stash versions lose on time at 1+0.1,
+hence 2+0.2 and the margin. Fastchess hangs after the last games of a match; kill it and the result stands. Gauntlet pgns
+are in releases/.
 
 ## git workflow
 
