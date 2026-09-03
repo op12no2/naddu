@@ -64,9 +64,15 @@ bun naddu.js uci ucinewgame "position startpos" "go depth 8"
 You can create executables using `Bun`:-
 
 ```
-bun build naddu.js --compile --minify --target=bun-windows-x64  --outfile=naddu-win-x64
-bun build naddu.js --compile --minify --target=bun-linux-x64    --outfile=naddu-linux-x64
-bun build naddu.js --compile --minify --target=bun-darwin-x64   --outfile=naddu-mac-x64
-bun build naddu.js --compile --minify --target=bun-darwin-arm64 --outfile=naddu-mac-arm64
+bun build naddu.js --compile --minify --target=bun-windows-x64   --outfile=naddu-win-x64
+bun build naddu.js --compile --minify --target=bun-windows-arm64 --outfile=naddu-win-arm64
+bun build naddu.js --compile --minify --target=bun-linux-x64     --outfile=naddu-linux-x64
+bun build naddu.js --compile --minify --target=bun-linux-arm64   --outfile=naddu-linux-arm64
+bun build naddu.js --compile --minify --target=bun-darwin-x64    --outfile=naddu-mac-x64
+bun build naddu.js --compile --minify --target=bun-darwin-arm64  --outfile=naddu-mac-arm64
 ```
+
+The Linux arm64 binary runs on a Raspberry Pi 3 or later with a 64-bit OS. Add `-musl` to
+the Linux targets for Alpine. Bun has no 32-bit targets, and microcontrollers like the ESP32
+are far too small for a full JavaScript engine.
 
