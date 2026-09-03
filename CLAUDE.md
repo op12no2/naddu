@@ -95,6 +95,7 @@ engine and the next match measures only the next feature.
 
 ## todo
 
+- proper 3 positioin draw detection
 - add the uci command to change tt size - with a default of 16Mb.
 - passed pawns in eval - tried Sep 2026 (per-file rank tracking, bonus 0/0/5/10/20/40/60 mg, 0/5/15/30/50/85/130 eg by rank): -19 +/- 12 Elo, rejected. PeSTO PSTs already reward advanced pawns and eval got 30% slower. A retry needs a different design, not smaller numbers.
 - mobility in eval - tried Sep 2026 together with fruit-style king zone attacks (one ray walk per piece in evaluate, mobility relative to a baseline, N/B/R/Q attack units 2/2/3/5 with a weight by attacker count): -24 +/- 12 Elo, rejected. The ray walk costs ~37% nps and the terms did not earn it back at 1+0.1. Any retry needs attack tables or a much cheaper approximation.
@@ -102,12 +103,6 @@ engine and the next match measures only the next feature.
 - lmp - tried Sep 2026 (non-PV, depth <= 3, skip quiet moves after 3 + 3*depth*depth): -4 +/- 11 Elo, neutral, left out as not worth the code on top of futility pruning
 
 always add a link to the chess programming wiki when adding a new feature.
-
-## claude suggestions
-
-Soft time limit, null move pruning, lmr and aspiration windows are done (Sep 2026). Passed pawns was tried and
-rejected, see todo. Nothing else pending from Claude; mobility and king safety are the next eval candidates but are
-bigger code and noisier to test.
 
 ## references
 

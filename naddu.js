@@ -1,3 +1,27 @@
+//
+// https://github.com/op12no2/naddu
+//
+// data structures
+//
+// WHITE, BLACK: 0, 8
+// PAWN to KING: 1 to 6
+// board: 0x88 
+// moves: `(from square << 8) | to square | flags`
+// TT uses 2 x Uint32 typed arrays
+//
+// useful expressions
+//
+// get piece type: piece & 0x7
+// get piece color: piece & BLACK
+// toggle color: color ^ BLACK
+// get 0,1 index from color: color >> 3
+// toggle colour index: colorIndex ^ 1
+// get to square from move: move & 0xff
+// get from square from move: (move >> 8) & 0xff
+// encode move: (from << 8) | to | flags
+// i often assume WHITE is 0, i.e. if (color) ...
+//
+
 function now() {
   return performance.now() | 0;
 }
