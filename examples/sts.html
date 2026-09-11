@@ -33,11 +33,12 @@
 <p>The 1500 positions of the <a href="https://www.chessprogramming.org/Strategic_Test_Suite">Strategic Test Suite</a>,
 15 themes of 100 positions, each searched for a fixed time. Every position has up to ten candidate moves
 scored 1 to 100, the best move scoring 100. The engine gets the score of the move it picks, or 0 if its move is
-not a candidate, so the maximum is 10000 per theme and 150000 overall. At one second a position the whole
-suite takes about 25 minutes.</p>
+not a candidate, so the maximum is 10000 per theme and 150000 overall. The default 10 ms gives a quick look
+in about a minute, at one second a position the whole suite takes about 25 minutes. Positions where the
+engine's move is not a candidate at all are listed under the table.</p>
 
 <p>
-  <label>Search time <input id="movetime" type="number" value="1000" min="10" step="100" style="width:6em"> ms</label>
+  <label>Search time <input id="movetime" type="number" value="10" min="10" step="100" style="width:6em"> ms</label>
   <button id="start">Start</button>
 </p>
 
@@ -46,6 +47,8 @@ suite takes about 25 minutes.</p>
 <table id="results"></table>
 
 <p id="summary"></p>
+
+<table id="misses"></table>
 
 <script>
 // theme names as in the epd file, two abbreviations expanded
@@ -1575,6 +1578,7 @@ let naddu = null;
 const progress = document.getElementById('progress');
 const results = document.getElementById('results');
 const summary = document.getElementById('summary');
+const misses = document.getElementById('misses');
 
 let index = 0;
 let total = 0;
@@ -1608,6 +1612,13 @@ function onMessage(e) {
   }
   scores[theme] += score;
   total += score;
+  // not a candidate at all, list it
+  if (!score) {
+    if (!misses.rows.length)
+      misses.innerHTML = '<tr><th>miss</th><th>fen</th><th>best</th><th>got</th></tr>';
+    misses.insertRow().innerHTML = '<td>' + themes[theme] + ' ' + (index - theme * 100 + 1) + '</td><td>' + tests[index][0]
+      + '</td><td>' + pairs[0].split('=')[0] + '</td><td>' + move + '</td>';
+  }
   index++;
   showRow(theme);
   progress.textContent = index + ' of ' + tests.length + ': ' + themes[theme] + ' ' + (index - theme * 100)
@@ -1630,6 +1641,7 @@ function start() {
   }
   summary.textContent = '';
   progress.textContent = '';
+  misses.innerHTML = '';
   index = 0;
   total = 0;
   for (let i = 0; i < themes.length; i++)
