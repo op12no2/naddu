@@ -1443,10 +1443,10 @@ function evaluate(node) {
   return e + TEMPO;
 }
 
-function evalInitOnce() {
+const MAT_MG = new Int16Array([0, 82, 337, 365, 477, 1025, 0]);
+const MAT_EG = new Int16Array([0, 94, 281, 297, 512,  936, 0]);
 
-  const MAT_MG = new Int16Array([0, 82, 337, 365, 477, 1025, 0]);
-  const MAT_EG = new Int16Array([0, 94, 281, 297, 512,  936, 0]);
+function evalInitOnce() {
 
   const PAWN_MG = new Int16Array([
       0,   0,   0,   0,   0,   0,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0,
@@ -1597,6 +1597,24 @@ function evalInitOnce() {
       EGW[piece][sq] = MAT_EG[piece] + PST_EG[piece][sq];
       EGB[piece][sq] = MAT_EG[piece] + PST_EG[piece][flipped];
     }
+  }
+}
+
+// print the piece square tables without material, one line per piece and phase
+// e.g. "pst n mg <64 values>" for a1 b1 ... h8 from white's side
+function printPst() {
+  const names = 'pnbrqk';
+  for (let piece = PAWN; piece <= KING; piece++) {
+    let mg = 'pst ' + names[piece - 1] + ' mg';
+    let eg = 'pst ' + names[piece - 1] + ' eg';
+    for (let sq = 0; sq < 128; sq++) {
+      if (sq & 0x88)
+        continue;
+      mg += ' ' + (MGW[piece][sq] - MAT_MG[piece]);
+      eg += ' ' + (EGW[piece][sq] - MAT_EG[piece]);
+    }
+    uciWrite(mg);
+    uciWrite(eg);
   }
 }
 
@@ -2382,6 +2400,10 @@ function execTokens(tokens) {
       uciWrite(evaluate(nodes[0]));
       break;
 
+    case 'pst':
+      printPst();
+      break;
+
     case 'perfttests':
     case 'pt':
       perftTests();
@@ -2419,6 +2441,7 @@ function execTokens(tokens) {
       uciWrite('board (b)                   show the current position');
       uciWrite('moves (l)                   list the legal moves, or checkmate/stalemate if there are none');
       uciWrite('eval (e)                    show the static eval of the current position');
+      uciWrite('pst                         show the piece square tables, a1 to h8 from the white side');
       uciWrite('perft (f) <depth>           count leaf nodes to the given depth');
       uciWrite('bench (h)                   search 50 positions and report nodes and nps');
       uciWrite('evaltests (et)              show the eval of the bench positions');

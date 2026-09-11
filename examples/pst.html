@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Piece square tables</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 70em;
+    margin: 2em auto;
+    padding: 0 1em;
+  }
+  #results {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5em;
+  }
+  table {
+    border-collapse: collapse;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+  caption {
+    text-align: left;
+    font-family: system-ui, sans-serif;
+    font-size: 14px;
+    padding-bottom: 0.3em;
+  }
+  td {
+    width: 2.4em;
+    height: 2.4em;
+    text-align: center;
+    border: 1px solid #ddd;
+  }
+  #summary { font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>Piece square tables</h1>
+
+<p>Naddu's <a href="https://www.chessprogramming.org/Piece-Square_Tables">piece square tables</a> (the
+<a href="https://www.chessprogramming.org/PeSTO%27s_Evaluation_Function">PeSTO</a> values) as heat maps, from white's side
+with rank 8 at the top. The tables are fetched from the engine with the <code>pst</code> command, so if you edit them in
+<code>naddu.js</code> this page follows. Middlegame (mg) and endgame (eg) values are blended by the
+<a href="https://www.chessprogramming.org/Tapered_Eval">tapered eval</a> as pieces come off. One colour scale is shared by
+all twelve tables, red is good for the piece and blue is bad, so the tables can be compared with each other.</p>
+
+<div id="results"></div>
+
+<p id="summary"></p>
+
+<script>
+const naddu = new Worker('../naddu.js');
+const results = document.getElementById('results');
+const summary = document.getElementById('summary');
+
+const names = {p: 'Pawn', n: 'Knight', b: 'Bishop', r: 'Rook', q: 'Queen', k: 'King'};
+const tables = [];  // [piece, phase, values] as the pst lines arrive
+
+// one colour scale across all the tables, white at 0, red positive, blue negative
+function colour(v, max) {
+  const l = 100 - Math.round(Math.abs(v) / max * 50);
+  return 'hsl(' + (v < 0 ? 220 : 0) + ', 80%, ' + l + '%)';
+}
+
+function draw() {
+  let lo = 0;
+  let hi = 0;
+  for (let i = 0; i < tables.length; i++) {
+    for (let j = 0; j < 64; j++) {
+      lo = Math.min(lo, tables[i][2][j]);
+      hi = Math.max(hi, tables[i][2][j]);
+    }
+  }
+  const max = Math.max(-lo, hi, 1);
+  for (let i = 0; i < tables.length; i++) {
+    const t = tables[i];
+    const table = document.createElement('table');
+    table.innerHTML = '<caption>' + names[t[0]] + ' ' + t[1] + '</caption>';
+    for (let rank = 7; rank >= 0; rank--) {
+      const row = table.insertRow();
+      for (let file = 0; file < 8; file++) {
+        const v = t[2][rank * 8 + file];
+        const cell = row.insertCell();
+        cell.textContent = v;
+        cell.style.background = colour(v, max);
+      }
+    }
+    results.appendChild(table);
+  }
+  summary.textContent = tables.length + ' of 12 tables, values from ' + lo + ' to ' + hi + ', one colour scale';
+}
+
+naddu.onmessage = function(e) {
+  const parts = e.data.split(' ');  // pst <piece> <mg|eg> <64 values a1..h8>
+  if (parts[0] !== 'pst')
+    return;
+  const values = [];
+  for (let i = 3; i < parts.length; i++)
+    values.push(parseInt(parts[i]));
+  tables.push([parts[1], parts[2], values]);
+  if (tables.length === 12)
+    draw();
+};
+
+naddu.postMessage('pst');
+</script>
+
+</body>
+</html>

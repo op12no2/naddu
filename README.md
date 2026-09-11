@@ -44,6 +44,7 @@ Try this example here: https://op12no2.github.io/naddu/examples/hello_world.html
 - [perft](https://op12no2.github.io/naddu/examples/perft.html) - move generator node counts against the known values, plus your own.
 - [bk](https://op12no2.github.io/naddu/examples/bk.html) - the Bratko-Kopec test at a search time of your choice.
 - [sts](https://op12no2.github.io/naddu/examples/sts.html) - the 1500 position Strategic Test Suite, scored overall and per theme.
+- [pst](https://op12no2.github.io/naddu/examples/pst.html) - the piece square tables as heat maps on one shared colour scale.
 - [parallel](https://op12no2.github.io/naddu/examples/parallel.html) - workers share out the root moves of one position and search them together.
 
 ## Command line
