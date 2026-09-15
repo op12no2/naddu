@@ -125,36 +125,89 @@ q
 ## Piece square tables
 
 The `pst` command prints, sets and resets the piece square tables, so a page or a script can restyle the engine
-without editing it. Pieces are `p n b r q k`, which means both colours with black mirrored, or `wn`, `bq` etc for one
-colour. Squares are absolute, `e4` is e4 for either colour. Values are whole centipawns separated by spaces, any
-whitespace will do, in the order a1 b1 ... h1 a2 ... h8, i.e. rank by rank from white's side. mg is middlegame and eg
-endgame. Not case sensitive. Any change clears the hash.
+without editing it. Any change clears the hash. Not case sensitive.
 
-- `pst` - print all 24 tables, one line each, e.g. `pst wn mg <64 values>`.
-- `pst n` or `pst wn mg` - print some of them.
-- `pst n mg e4` - print one square, `pst n e4` prints white mg, white eg, black mg, black eg, black being e5.
-- `pst n mg e4 25` - set one square, white e4 and black e5.
-- `pst bn mg e4 25` - set one square for black only.
-- `pst n mg -105 -21 -58 ... -107` - set a table from 64 values, a printed line can be pasted back.
-- `pst n mg def`, `pst n def`, `pst def` - reset a table, a piece or everything to the PeSTO values.
+```
+pst
+pst def
+pst <piece> [mg|eg]
+pst <piece> [mg|eg] def
+pst <piece> [mg|eg] <sq>
+pst <piece> [mg|eg] <sq> <v>
+pst <piece> [mg|eg] <v1> <v2> ... <v64>
+```
+
+- `<piece>` - `p n b r q k` for both colours, black mirrored, or `wp bn` etc for one colour.
+- `mg|eg` - middlegame or endgame table, both if left out.
+- `<sq>` - an absolute square, `e4` is e4 for either colour.
+- `<v>` - whole centipawns, 64 of them in the order a1 b1 ... h1 a2 ... h8.
+- `def` - reset to the PeSTO values.
+
+### Examples
+
+`pst` prints all 24 tables, one line each in the form `pst wn mg <64 values>`, which is exactly the form the set
+command takes, so a printed line can be edited and sent back. `pst n` prints the four knight tables and `pst bn eg`
+just the black knight endgame table.
+
+`pst n mg e4` prints the middlegame value of a knight on e4 for white and then black, and since no colour was given
+the black value is the mirrored square e5. `pst wn e4` prints white's middlegame and endgame values for e4.
+
+`pst n mg e4 25` sets the middlegame value of a knight on e4 to 25 for white and, mirrored, on e5 for black. This
+keeps the eval symmetric. `pst bn mg e4 25` sets black's e4 only, which is how you give the two sides different
+styles.
+
+`pst n mg -105 -21 -58 ... -107` sets the whole white middlegame knight table and its mirror for black from 64
+values, a1 to h8 rank by rank from white's side.
+
+`pst n mg def` resets one table, `pst n def` the four knight tables, `pst def` everything.
 
 ## Features
 
-The `feature` command prints, sets and resets the other numbers in the eval the same way. Values are whole numbers
-separated by spaces and given all at once, a printed line can be pasted back, and any change clears the hash. `feature` prints everything, `feature def`
-resets everything.
+The `feature` command prints, sets and resets the other numbers in the eval the same way. Values are given all at
+once. Any change clears the hash. Not case sensitive.
 
-- `feature tempo 10` - bonus for the side to move.
-- `feature phase 1 1 2 4` - phase weights for knight, bishop, rook and queen, the taper runs from their total at the
-  start, 24 by default, down to 0.
-- `feature shelter 0 4 8 12` - king shelter, the penalty for the nearest own pawn being 0, 1, 2 or 3 ranks ahead
-  of the king on each of the three files around it, none within three counting as 3, the king's own file doubled,
-  middlegame only and only while the opponent has a queen.
-- `feature mopup 10 8 200` - in pawnless endings, per step the losing king is from the centre, per step the kings are
-  close, and the endgame lead needed to switch it on.
-- `feature mat mg 82 337 365 477 1025` - material from pawn to queen, `mg` or `eg`, for both colours, or `wmat` and
-  `bmat` for one colour.
-- `feature tempo def`, `feature mat mg def` - back to the defaults.
+```
+feature
+feature def
+feature <name>
+feature <name> def
+feature <name> <v1> ... <vn>
+```
+
+- `tempo <v>` - bonus for the side to move.
+- `phase <n> <b> <r> <q>` - phase weights, the taper runs from their total at the start down to 0.
+- `shelter <v0> <v1> <v2> <v3>` - king shelter penalty by the distance of the nearest own pawn ahead of the king.
+- `mopup <centre> <close> <lead>` - mop up bonus in pawnless endings.
+- `mat mg|eg <p> <n> <b> <r> <q>` - material for both colours, `wmat` or `bmat` for one.
+
+### Examples
+
+`feature` prints everything, one line each, again in the form the set command takes. `feature phase` prints just the
+phase weights, `feature mat mg` the middlegame material lines for both colours.
+
+`feature tempo 20` doubles the bonus for having the move, which makes the engine a little more inclined to keep
+the initiative.
+
+`feature phase 1 1 2 4` are the defaults. A knight or bishop counts 1, a rook 2 and a queen 4, so the start position
+totals 24 and the eval is blended from the middlegame values at 24 to the endgame values at 0 as pieces come off.
+`feature phase 2 2 4 8` keeps the same shape but the total is 48, so the same blend happens at the same points, the
+numbers just scale. `feature phase 0 0 0 4` makes the taper depend on the queens alone.
+
+`feature shelter 0 4 8 12` are the defaults. The four values are the penalty for the nearest own pawn being 0, 1, 2
+or 3 ranks ahead of the king on each of the three files around it, none within three counting as 3, so with a pawn
+right in front there is no penalty and an open file costs 12. The king's own file is doubled. It only applies in the
+middlegame and only while the opponent has a queen. `feature shelter 0 8 16 24` makes the engine care twice as much
+about pawn cover, `feature shelter 0 0 0 0` turns it off.
+
+`feature mopup 10 8 200` are the defaults. In an ending with no pawns and a lead of at least 200 the winning side gets
+10 per step the losing king is from the centre plus 8 per step the two kings are close, which drives the king to the
+edge and the mating king towards it.
+
+`feature mat mg 82 337 365 477 1025` are the default middlegame values for pawn, knight, bishop, rook and queen.
+`feature mat eg 94 281 297 512 936` the endgame ones. `feature bmat mg 82 337 400 477 1025` makes black alone value
+its bishops at 400.
+
+`feature tempo def`, `feature mat mg def` and `feature def` reset one feature, one table of material or everything.
 
 ## Command line
 
