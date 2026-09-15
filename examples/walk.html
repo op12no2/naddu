@@ -78,14 +78,14 @@ no hash is shared, random four ply openings, colours alternated, several games a
 least the accept percentage it becomes the best, and the walk goes on for ever. The best is kept in this browser
 so a reload carries on.</p>
 
-<p>This is not a tuner. The error bar on a 40 game match is about a hundred Elo, so most accepted changes are noise,
+<p>This is not a tuner. The error bar on a 64 game match is about eighty five Elo, so most accepted changes are noise,
 and what wins at ten seconds a game may not win at a longer control, though it is the control Naddu is tested at. It is a toy that shows the
 shape of <a href="https://www.chessprogramming.org/Automated_Tuning">automated tuning</a>, of which
 <a href="https://www.chessprogramming.org/SPSA">SPSA</a> is the serious version, with none of the maths. Raising the
 games per candidate and the accept percentage makes it less of a toy.</p>
 
 <p id="controls">
-  <label>Games <input id="games-n" type="number" value="40" min="2" step="2" style="width:4em"></label>
+  <label>Games <input id="games-n" type="number" value="64" min="2" step="2" style="width:4em"></label>
   <label>Accept <input id="accept" type="number" value="55" min="50" max="100" style="width:4em"> %</label>
   <label>Clock <input id="clock" type="number" value="10" min="1" style="width:4em"> s</label>
   <label>+ <input id="inc" type="number" value="0.1" min="0" step="0.05" style="width:4em"> s</label>
