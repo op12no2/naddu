@@ -17,7 +17,7 @@
     gap: 1em;
     margin-bottom: 1.5em;
   }
-  #phase { width: 20em; }
+  #phase { width: 20em; direction: rtl; }  /* 24 on the left, 0 on the right, the game reads left to right */
   #results {
     display: flex;
     flex-wrap: wrap;
@@ -52,14 +52,16 @@ table</a> values Naddu actually uses at a given game phase. The
 <a href="https://www.chessprogramming.org/Tapered_Eval">tapered eval</a> blends the middlegame (mg) and endgame (eg)
 tables with <code>(mg * phase + eg * (24 - phase)) / 24</code>, where the phase counts the pieces on the board for both
 sides: knights and bishops 1 each, rooks 2, queens 4. So 24 is the start position (pure mg), 0 is kings and pawns only
-(pure eg) and, say, a rook ending is 4. Drag the slider to watch the blend. The tables are fetched from the engine with
+(pure eg) and, say, a rook ending is 4. Drag the slider, middlegame on the left through to the endgame on the right, to watch the blend. The tables are fetched from the engine with
 the <code>pst</code> command, so if you edit them in <code>naddu.js</code> this page follows. Boards are from white's side
 with rank 8 at the top, red is good for the piece and blue is bad, on one colour scale shared by all six boards and fixed
 across all phases.</p>
 
 <div id="controls">
   <label for="phase">Phase</label>
+  <span>24</span>
   <input id="phase" type="range" min="0" max="24" value="24">
+  <span>0</span>
   <span id="label"></span>
 </div>
 
