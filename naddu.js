@@ -1386,6 +1386,10 @@ function distInitOnce() {
 const MOPUP = new Int16Array([10, 8, 200]);
 
 //
+// NOTE: examples/tuner.html carries its own copy of this eval as feature coefficients for gradient
+// descent. If you add or change a term here, add it there too; the page checks itself against
+// the engine on loading and says if the two disagree.
+//
 // evaluate() uses PESTO values https://chessprogramming.org/PeSTO%27s_Evaluation_Function
 // i.e. material and piece-square tables https://www.chessprogramming.org/Piece-Square_Tables
 // with a tapered eval https://www.chessprogramming.org/Tapered_Eval

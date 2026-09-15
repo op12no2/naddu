@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tuner</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 70em;
+    margin: 2em auto;
+    padding: 0 1em;
+  }
+  #controls label { margin-right: 1em; }
+  #maps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5em;
+  }
+  #maps table {
+    border-collapse: collapse;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 11px;
+  }
+  #maps caption {
+    text-align: left;
+    font-family: system-ui, sans-serif;
+    font-size: 13px;
+    padding-bottom: 0.3em;
+  }
+  #maps td {
+    width: 2.4em;
+    height: 2em;
+    text-align: center;
+    border: 1px solid #ddd;
+  }
+  #values {
+    border-collapse: collapse;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 14px;
+    margin: 1em 0;
+  }
+  #values td, #values th {
+    text-align: right;
+    padding: 0.2em 1em 0.2em 0;
+  }
+  #values td:first-child, #values th:first-child { text-align: left; }
+  #chart {
+    width: 100%;
+    max-width: 800px;
+    border: 1px solid #ddd;
+    margin: 1em 0;
+  }
+  #status, #summary { font-weight: bold; }
+  #status, #summary, #output {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 13px;
+    white-space: pre-wrap;
+  }
+</style>
+</head>
+<body>
+
+<h1>Tuner</h1>
+
+<p>A gradient descent tuner for the eval, the piece square tables, material, tempo, shelter, smother and cuddle, all
+of them in both phases. It fits the eval to the results of 725,000 quiet positions from the Zurichess set, the
+standard <a href="https://www.chessprogramming.org/Texel%27s_Tuning_Method">Texel tuning</a> recipe: a sigmoid turns
+the eval into an expected result, the loss is the mean squared error against the actual result, and
+<a href="https://www.chessprogramming.org/Automated_Tuning#Adam">Adam</a> steps the weights down the gradient each
+epoch. Every term is linear in its weights so the gradients are exact. The phase weights and mop up are not tuned,
+mop up is carried as a constant per position. The positions are parsed and the gradients summed by a pool of
+workers, each holding a share of the data, and the page never calls the engine after the start except to check
+itself.</p>
+
+<p>The page carries its own copy of the eval as feature coefficients, so on loading it evaluates 2000 positions
+both ways and reports whether they match. If a feature is added to <code>naddu.js</code> it must be added here too
+and that check is how you know. Start from the engine's values to refine them, or from zero to watch the tables
+grow out of nothing. The result is printed as <code>pst</code> and <code>feature</code> lines to paste into the
+console page or a script, and being fitted to results it still has to earn its place in a match.</p>
+
+<p id="controls">
+  <label>Positions <input id="count" type="number" value="725000" min="1000" step="1000" style="width:7em"></label>
+  <label>Workers <input id="workers" type="number" value="8" min="1" max="32" style="width:4em"></label>
+  <label>From <select id="from"><option value="engine">engine values</option><option value="zero">zero</option></select></label>
+  <label>Rate <input id="rate" type="number" value="4" min="0.01" step="0.5" style="width:4em"></label>
+  <label>Epochs <input id="epochs" type="number" value="500" min="1" style="width:5em"></label>
+  <button id="start" disabled>Start</button>
+  <button id="stop" disabled>Stop</button>
+  <label>Own file <input id="file" type="file" accept=".epd,.txt"></label>
+</p>
+
+<p id="status"></p>
+<p id="summary"></p>
+
+<svg id="chart" viewBox="0 0 800 200"></svg>
+
+<table id="values"></table>
+
+<div id="maps"></div>
+
+<pre id="output"></pre>
+
+<script type="text/plain" id="worker-code">
+// tuner worker: parses a shard of positions into feature coefficients and computes loss and gradients
+// slots 0..383 piece square tables (piece-1)*64 + square a1..h8, 384..388 material p..q,
+// 389..392 shelter by distance (mg only), 393..396 smother n..q, 397..400 cuddle n..q; weights are
+// mg then eg per slot, then tempo on its own
+const NS = 401;
+const PHASE = [0, 0, 1, 1, 2, 4, 0];
+const PIECE = {p: 1, n: 2, b: 3, r: 4, q: 5, k: 6};
+const DIST = new Int8Array(0xef);
+for (let a = 0; a < 128; a++) {
+  if (a & 0x88) continue;
+  for (let b = 0; b < 128; b++) {
+    if (b & 0x88) continue;
+    DIST[0x77 + a - b] = Math.max(Math.abs((a & 7) - (b & 7)), Math.abs((a >> 4) - (b >> 4)));
+  }
+}
+
+let n = 0;              // positions
+let start = null;       // Int32Array n+1, entry offsets
+let slot = null;        // Int16Array entries
+let coeff = null;       // Int8Array entries
+let phase = null;       // Uint8Array n, 0..24
+let result = null;      // Float32Array n, white's view
+let sign = null;        // Int8Array n, +1 white to move
+let mop = null;         // Int16Array n, mop up constant from white's view
+let fens = [];          // the first few, for the check
+let board = new Uint8Array(128);
+let colour = new Uint8Array(128);
+
+// the engine's shelter walk, returns the multiplicity per distance for one king
+function shelter(king, pawnColour, dir, mult) {
+  const kf = Math.min(Math.max(king & 7, 1), 6);
+  for (let f = kf - 1; f <= kf + 1; f++) {
+    let sq = (king & 0x70) + f;
+    let d = 0;
+    while (d < 3) {
+      sq += dir;
+      if (sq & 0x88 || (board[sq] === 1 && colour[sq] === pawnColour))
+        break;
+      d++;
+    }
+    mult[d] += f === kf ? 2 : 1;
+  }
+}
+
+function parse(text, W) {
+  const lines = text.split('\n');
+  const slots = [];
+  const coeffs = [];
+  const starts = [0];
+  const ph = [];
+  const res = [];
+  const sg = [];
+  const mo = [];
+  const counts = new Int8Array(7);
+  const mult = [new Int8Array(4), new Int8Array(4)];
+  const smo = new Int16Array(7);
+  const cud = new Int16Array(7);
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li];
+    if (line.length < 20)
+      continue;
+    const parts = line.split(' ');
+    const rows = parts[0].split('/');
+    board.fill(0);
+    let wk = 0, bk = 0, p = 0, pieces = 0, minors = 0;
+    counts.fill(0);
+    let sq = 0x70;
+    for (let r = 0; r < 8; r++) {
+      let file = 0;
+      for (let i = 0; i < rows[r].length; i++) {
+        const c = rows[r][i];
+        if (c >= '1' && c <= '8') {
+          file += c.charCodeAt(0) - 48;
+          continue;
+        }
+        const type = PIECE[c.toLowerCase()];
+        const black = c === c.toLowerCase();
+        const s = sq + file;
+        board[s] = type;
+        colour[s] = black ? 1 : 0;
+        counts[type] += black ? -1 : 1;
+        p += PHASE[type];
+        pieces++;
+        if (type === 2 || type === 3)
+          minors++;
+        if (type === 6) {
+          if (black) bk = s; else wk = s;
+        }
+        file++;
+      }
+      sq -= 16;
+    }
+    if (pieces <= 2 || pieces === 3 && minors)  // the engine calls these drawn and returns 0
+      continue;
+    const stm = parts[1] === 'w' ? 1 : -1;
+    const r = parts[5].indexOf('1-0') >= 0 ? 1 : parts[5].indexOf('0-1') >= 0 ? 0 : 0.5;
+    // pieces: tables, material, king distance terms
+    smo.fill(0);
+    cud.fill(0);
+    for (let s = 0; s < 128; s++) {
+      if (s & 0x88 || !board[s])
+        continue;
+      const type = board[s];
+      const sq64 = (s >> 4) * 8 + (s & 7);
+      if (colour[s]) {
+        slots.push((type - 1) * 64 + (sq64 ^ 56));
+        coeffs.push(-1);
+        if (type >= 2 && type <= 5) {
+          smo[type] -= 7 - DIST[0x77 + s - wk];
+          cud[type] -= 7 - DIST[0x77 + s - bk];
+        }
+      }
+      else {
+        slots.push((type - 1) * 64 + sq64);
+        coeffs.push(1);
+        if (type >= 2 && type <= 5) {
+          smo[type] += 7 - DIST[0x77 + s - bk];
+          cud[type] += 7 - DIST[0x77 + s - wk];
+        }
+      }
+    }
+    for (let type = 1; type <= 5; type++) {
+      if (counts[type]) {
+        slots.push(384 + type - 1);
+        coeffs.push(counts[type]);
+      }
+    }
+    for (let type = 2; type <= 5; type++) {
+      if (smo[type]) {
+        slots.push(393 + type - 2);
+        coeffs.push(smo[type]);
+      }
+      if (cud[type]) {
+        slots.push(397 + type - 2);
+        coeffs.push(cud[type]);
+      }
+    }
+    // shelter, a penalty, only while the other side has a queen
+    mult[0].fill(0);
+    mult[1].fill(0);
+    let hasWQ = false, hasBQ = false;
+    for (let s = 0; s < 128; s++) {
+      if (!(s & 0x88) && board[s] === 5) {
+        if (colour[s]) hasBQ = true; else hasWQ = true;
+      }
+    }
+    if (hasBQ)
+      shelter(wk, 0, 16, mult[0]);
+    if (hasWQ)
+      shelter(bk, 1, -16, mult[1]);
+    for (let d = 0; d < 4; d++) {
+      const c = -mult[0][d] + mult[1][d];
+      if (c) {
+        slots.push(389 + d);
+        coeffs.push(c);
+      }
+    }
+    starts.push(slots.length);
+    ph.push(Math.min(24, p));
+    res.push(r);
+    sg.push(stm);
+    // mop up with the engine's values: no pawns and an endgame lead of 200
+    let m = 0;
+    if (!counts[1] && board.indexOf(1) < 0) {
+      let egW = 0, egB = 0;
+      for (let s = 0; s < 128; s++) {
+        if (s & 0x88 || !board[s])
+          continue;
+        const type = board[s];
+        const sq64 = (s >> 4) * 8 + (s & 7);
+        if (colour[s])
+          egB += (type <= 5 ? W[NS + 384 + type - 1] : 0) + W[NS + (type - 1) * 64 + (sq64 ^ 56)];
+        else
+          egW += (type <= 5 ? W[NS + 384 + type - 1] : 0) + W[NS + (type - 1) * 64 + sq64];
+      }
+      if (Math.abs(egW - egB) >= 200) {
+        const lk = egW > egB ? bk : wk;
+        const centre = (Math.abs(2 * (lk & 7) - 7) + Math.abs(2 * (lk >> 4) - 7) - 2) >> 1;
+        const apart = Math.abs((wk & 7) - (bk & 7)) + Math.abs((wk >> 4) - (bk >> 4));
+        m = (10 * centre + 8 * (14 - apart)) * (egW > egB ? 1 : -1);
+      }
+    }
+    mo.push(m);
+    if (fens.length < 400)
+      fens.push(parts.slice(0, 4).join(' '));
+  }
+  n = ph.length;
+  start = Int32Array.from(starts);
+  slot = Int16Array.from(slots);
+  coeff = Int8Array.from(coeffs);
+  phase = Uint8Array.from(ph);
+  result = Float32Array.from(res);
+  sign = Int8Array.from(sg);
+  mop = Int16Array.from(mo);
+}
+
+// the eval of position i from white's side as a float, and exactly as the engine would with integer weights
+function evalOf(i, W) {
+  let mg = 0, eg = 0;
+  for (let e = start[i]; e < start[i + 1]; e++) {
+    mg += coeff[e] * W[slot[e]];
+    eg += coeff[e] * W[NS + slot[e]];
+  }
+  return ((mg + mop[i]) * phase[i] + (eg + mop[i]) * (24 - phase[i])) / 24 + sign[i] * W[2 * NS];
+}
+
+function exactEval(i, W) {
+  let mg = 0, eg = 0;
+  for (let e = start[i]; e < start[i + 1]; e++) {
+    mg += coeff[e] * W[slot[e]];
+    eg += coeff[e] * W[NS + slot[e]];
+  }
+  mg = (mg + mop[i]) * sign[i];
+  eg = (eg + mop[i]) * sign[i];
+  return sign[i] * (Math.trunc((mg * phase[i] + eg * (24 - phase[i])) / 24) + W[2 * NS]);
+}
+
+function sigmoid(e, K) {
+  return 1 / (1 + Math.pow(10, -K * e / 400));
+}
+
+onmessage = function(m) {
+  const d = m.data;
+  if (d.cmd === 'parse') {
+    parse(d.text, d.W);
+    postMessage({cmd: 'parsed', n: n, entries: slot.length});
+  }
+  else if (d.cmd === 'check') {
+    const evals = [];
+    for (let i = 0; i < fens.length; i++)
+      evals.push(exactEval(i, d.W));
+    postMessage({cmd: 'checked', fens: fens, evals: evals});
+  }
+  else if (d.cmd === 'loss') {
+    let loss = 0;
+    for (let i = 0; i < n; i++) {
+      const s = sigmoid(evalOf(i, d.W), d.K);
+      loss += (result[i] - s) * (result[i] - s);
+    }
+    postMessage({cmd: 'loss', loss: loss, n: n});
+  }
+  else if (d.cmd === 'grad') {
+    const W = d.W;
+    const K = d.K;
+    const grad = new Float64Array(2 * NS + 1);
+    const c = Math.LN10 * K / 400;
+    let loss = 0;
+    for (let i = 0; i < n; i++) {
+      const s = sigmoid(evalOf(i, W), K);
+      const diff = result[i] - s;
+      loss += diff * diff;
+      const g = -2 * diff * s * (1 - s) * c;
+      const gm = g * phase[i] / 24;
+      const ge = g * (24 - phase[i]) / 24;
+      for (let e = start[i]; e < start[i + 1]; e++) {
+        grad[slot[e]] += gm * coeff[e];
+        grad[NS + slot[e]] += ge * coeff[e];
+      }
+      grad[2 * NS] += g * sign[i];
+    }
+    postMessage({cmd: 'grad', loss: loss, n: n, grad: grad}, [grad.buffer]);
+  }
+};
+</script>
+
+<script>
+const NS = 401;
+const NAMES = 'pnbrqk';
+const PIECES = {p: 'Pawn', n: 'Knight', b: 'Bishop', r: 'Rook', q: 'Queen', k: 'King'};
+
+const status = document.getElementById('status');
+const summary = document.getElementById('summary');
+const chart = document.getElementById('chart');
+const valuesEl = document.getElementById('values');
+const maps = document.getElementById('maps');
+const output = document.getElementById('output');
+const startBtn = document.getElementById('start');
+const stopBtn = document.getElementById('stop');
+
+const workerUrl = URL.createObjectURL(new Blob([document.getElementById('worker-code').textContent], {type: 'text/javascript'}));
+let workers = [];
+let engine = new Float64Array(2 * NS + 1);  // the engine's own values
+let W = new Float64Array(2 * NS + 1);
+let K = 1;
+let total = 0;
+let losses = [];
+let running = false;
+let cells = [];  // [piece-1][phase] => 64 td elements
+let mA = null, vA = null, step = 0;  // adam state
+
+// send one message to every worker and collect the replies
+function ask(msg, transfer) {
+  const replies = [];
+  return new Promise(function(resolve) {
+    let left = workers.length;
+    for (let i = 0; i < workers.length; i++) {
+      workers[i].onmessage = function(e) {
+        replies[i] = e.data;
+        if (--left === 0)
+          resolve(replies);
+      };
+      workers[i].postMessage(msg[i] || msg);
+    }
+  });
+}
+
+// the engine's current values from the pst and feature commands into a weight vector
+function fetchEngine() {
+  return new Promise(function(resolve) {
+    const naddu = new Worker('../naddu.js');
+    const w = new Float64Array(2 * NS + 1);
+    naddu.onmessage = function(e) {
+      const t = e.data.split(' ');
+      if (t[0] === 'pst' && t[1][0] === 'w') {
+        const piece = NAMES.indexOf(t[1][1]);
+        const off = (t[2] === 'eg' ? NS : 0) + piece * 64;
+        for (let i = 0; i < 64; i++)
+          w[off + i] = parseInt(t[3 + i]);
+      }
+      else if (t[0] === 'feature') {
+        const off = t[2] === 'eg' ? NS : 0;
+        if (t[1] === 'wmat')
+          for (let i = 0; i < 5; i++)
+            w[off + 384 + i] = parseInt(t[3 + i]);
+        else if (t[1] === 'tempo')
+          w[2 * NS] = parseInt(t[2]);
+        else if (t[1] === 'shelter')
+          for (let i = 0; i < 4; i++)
+            w[389 + i] = parseInt(t[2 + i]);
+        else if (t[1] === 'smother')
+          for (let i = 0; i < 4; i++)
+            w[off + 393 + i] = parseInt(t[3 + i]);
+        else if (t[1] === 'cuddle')
+          for (let i = 0; i < 4; i++)
+            w[off + 397 + i] = parseInt(t[3 + i]);
+      }
+      else if (e.data === 'readyok') {
+        naddu.terminate();
+        resolve(w);
+      }
+    };
+    naddu.postMessage('pst');
+    naddu.postMessage('feature');
+    naddu.postMessage('isready');
+  });
+}
+
+// the engine's own eval of some positions, in order
+function engineEvals(fens) {
+  return new Promise(function(resolve) {
+    const naddu = new Worker('../naddu.js');
+    const evals = [];
+    naddu.onmessage = function(e) {
+      if (/^-?\d+$/.test(e.data))
+        evals.push(parseInt(e.data));
+      if (evals.length === fens.length) {
+        naddu.terminate();
+        resolve(evals);
+      }
+    };
+    for (let i = 0; i < fens.length; i++) {
+      naddu.postMessage('position fen ' + fens[i] + ' 0 1');
+      naddu.postMessage('eval');
+    }
+  });
+}
+
+function colour(v, max) {
+  const l = 100 - Math.round(Math.abs(v) / max * 50);
+  return 'hsl(' + (v < 0 ? 220 : 0) + ', 80%, ' + l + '%)';
+}
+
+function lines() {
+  const out = [];
+  for (let piece = 0; piece < 6; piece++) {
+    for (let ph = 0; ph < 2; ph++) {
+      let line = 'pst ' + NAMES[piece] + (ph ? ' eg' : ' mg');
+      for (let i = 0; i < 64; i++)
+        line += ' ' + Math.round(W[ph * NS + piece * 64 + i]);
+      out.push(line);
+    }
+  }
+  const list = function(name, off, n, ph) {
+    let line = 'feature ' + name + (ph === undefined ? '' : ph ? ' eg' : ' mg');
+    for (let i = 0; i < n; i++)
+      line += ' ' + Math.round(W[(ph ? NS : 0) + off + i]);
+    return line;
+  };
+  out.push(list('mat', 384, 5, 0));
+  out.push(list('mat', 384, 5, 1));
+  out.push('feature tempo ' + Math.round(W[2 * NS]));
+  out.push(list('shelter', 389, 4));
+  out.push(list('smother', 393, 4, 0));
+  out.push(list('smother', 393, 4, 1));
+  out.push(list('cuddle', 397, 4, 0));
+  out.push(list('cuddle', 397, 4, 1));
+  return out;
+}
+
+function draw() {
+  let max = 1;
+  for (let i = 0; i < 2 * NS; i++)
+    if (i % NS < 384)
+      max = Math.max(max, Math.abs(W[i]));
+  for (let piece = 0; piece < 6; piece++)
+    for (let ph = 0; ph < 2; ph++)
+      for (let i = 0; i < 64; i++) {
+        const v = Math.round(W[ph * NS + piece * 64 + i]);
+        cells[piece][ph][i].textContent = v;
+        cells[piece][ph][i].style.background = colour(v, max);
+      }
+  const row = function(name, off, n, both) {
+    let html = '<tr><td>' + name + '</td>';
+    for (let i = 0; i < n; i++)
+      html += '<td>' + Math.round(W[off + i]) + (both ? ' / ' + Math.round(W[NS + off + i]) : '') + '</td>';
+    return html + '</tr>';
+  };
+  valuesEl.innerHTML = '<tr><th>mg / eg</th><th>p</th><th>n</th><th>b</th><th>r</th><th>q</th></tr>'
+    + row('material', 384, 5, true)
+    + '<tr><td>tempo</td><td>' + Math.round(W[2 * NS]) + '</td></tr>'
+    + '<tr><th>by distance</th><th>0</th><th>1</th><th>2</th><th>3</th></tr>' + row('shelter', 389, 4, false)
+    + '<tr><th>mg / eg</th><th>n</th><th>b</th><th>r</th><th>q</th></tr>' + row('smother', 393, 4, true) + row('cuddle', 397, 4, true);
+  output.textContent = lines().join('\n');
+  // loss curve
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < losses.length; i++) {
+    lo = Math.min(lo, losses[i]);
+    hi = Math.max(hi, losses[i]);
+  }
+  let pts = '';
+  for (let i = 0; i < losses.length; i++)
+    pts += (40 + i / Math.max(1, losses.length - 1) * 740) + ',' + (10 + (hi - losses[i]) / Math.max(1e-9, hi - lo) * 170) + ' ';
+  chart.innerHTML = '<text x="4" y="14" font-size="11">' + (losses.length ? hi.toFixed(5) : '') + '</text><text x="4" y="190" font-size="11">'
+    + (losses.length ? lo.toFixed(5) : '') + '</text><polyline points="' + pts + '" fill="none" stroke="#36c" stroke-width="1.5"/>';
+}
+
+function makeMaps() {
+  maps.innerHTML = '';
+  cells = [];
+  for (let piece = 0; piece < 6; piece++) {
+    cells.push([]);
+    for (let ph = 0; ph < 2; ph++) {
+      const table = document.createElement('table');
+      table.innerHTML = '<caption>' + PIECES[NAMES[piece]] + (ph ? ' eg' : ' mg') + '</caption>';
+      const c = [];
+      for (let rank = 7; rank >= 0; rank--) {
+        const row = table.insertRow();
+        for (let file = 0; file < 8; file++)
+          c[rank * 8 + file] = row.insertCell();
+      }
+      cells[piece].push(c);
+      maps.appendChild(table);
+    }
+  }
+}
+
+async function lossAt(k) {
+  const r = await ask({cmd: 'loss', W: engine, K: k});
+  let loss = 0;
+  for (let i = 0; i < r.length; i++)
+    loss += r[i].loss;
+  return loss / total;
+}
+
+// fit the sigmoid scale to the engine's values by golden section search
+async function fitK() {
+  let a = 0.3, b = 4;
+  const g = (Math.sqrt(5) - 1) / 2;
+  let c = b - g * (b - a), d = a + g * (b - a);
+  let fc = await lossAt(c), fd = await lossAt(d);
+  for (let i = 0; i < 20; i++) {
+    if (fc < fd) {
+      b = d; d = c; fd = fc;
+      c = b - g * (b - a);
+      fc = await lossAt(c);
+    }
+    else {
+      a = c; c = d; fc = fd;
+      d = a + g * (b - a);
+      fd = await lossAt(d);
+    }
+  }
+  return (a + b) / 2;
+}
+
+async function load(text) {
+  running = false;
+  startBtn.disabled = true;
+  for (let i = 0; i < workers.length; i++)
+    workers[i].terminate();
+  workers = [];
+  summary.textContent = '';
+  status.textContent = 'reading the engine values';
+  engine = await fetchEngine();
+  const count = parseInt(document.getElementById('count').value);
+  const n = parseInt(document.getElementById('workers').value);
+  status.textContent = 'parsing with ' + n + ' workers';
+  const all = text.split('\n');
+  const lines = all.slice(0, Math.min(count, all.length));
+  const per = Math.ceil(lines.length / n);
+  const msgs = [];
+  for (let i = 0; i < n; i++) {
+    workers.push(new Worker(workerUrl));
+    msgs.push({cmd: 'parse', text: lines.slice(i * per, (i + 1) * per).join('\n'), W: engine});
+  }
+  const parsed = await ask(msgs);
+  total = 0;
+  let entries = 0;
+  for (let i = 0; i < parsed.length; i++) {
+    total += parsed[i].n;
+    entries += parsed[i].entries;
+  }
+  // the page's eval against the engine's on some positions from each worker
+  status.textContent = total + ' positions, ' + entries + ' coefficients, checking the eval';
+  const checks = await ask({cmd: 'check', W: engine});
+  let fens = [], mine = [];
+  for (let i = 0; i < checks.length; i++) {
+    fens = fens.concat(checks[i].fens.slice(0, Math.ceil(2000 / n)));
+    mine = mine.concat(checks[i].evals.slice(0, Math.ceil(2000 / n)));
+  }
+  const theirs = await engineEvals(fens);  // from the side to move, the page works from white's side
+  let ok = 0;
+  const bad = [];
+  for (let i = 0; i < fens.length; i++) {
+    if (fens[i].split(' ')[1] === 'b')
+      theirs[i] = -theirs[i];
+    if (mine[i] === theirs[i])
+      ok++;
+    else if (bad.length < 5)
+      bad.push(fens[i] + ' page ' + mine[i] + ' engine ' + theirs[i]);
+  }
+  summary.textContent = ok + ' of ' + fens.length + ' positions eval the same as the engine' + (bad.length ? '\n' + bad.join('\n') : '');
+  status.textContent = 'fitting K';
+  K = await fitK();
+  status.textContent = total + ' positions, K ' + K.toFixed(3) + ', loss ' + (await lossAt(K)).toFixed(5) + ' at the engine values, press Start';
+  W = engine.slice();
+  losses = [];
+  draw();
+  startBtn.disabled = false;
+}
+
+async function train() {
+  running = true;
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+  if (document.getElementById('from').value === 'zero')
+    W = new Float64Array(2 * NS + 1);
+  else
+    W = engine.slice();
+  losses = [];
+  mA = new Float64Array(2 * NS + 1);
+  vA = new Float64Array(2 * NS + 1);
+  step = 0;
+  const epochs = parseInt(document.getElementById('epochs').value);
+  const rate = parseFloat(document.getElementById('rate').value);
+  const t0 = performance.now();
+  for (let epoch = 1; epoch <= epochs && running; epoch++) {
+    const r = await ask({cmd: 'grad', W: W, K: K});
+    const grad = new Float64Array(2 * NS + 1);
+    let loss = 0;
+    for (let i = 0; i < r.length; i++) {
+      loss += r[i].loss;
+      for (let j = 0; j < grad.length; j++)
+        grad[j] += r[i].grad[j];
+    }
+    losses.push(loss / total);
+    // adam
+    step++;
+    for (let j = 0; j < grad.length; j++) {
+      const g = grad[j] / total;
+      mA[j] = 0.9 * mA[j] + 0.1 * g;
+      vA[j] = 0.999 * vA[j] + 0.001 * g * g;
+      const mh = mA[j] / (1 - Math.pow(0.9, step));
+      const vh = vA[j] / (1 - Math.pow(0.999, step));
+      W[j] -= rate * mh / (Math.sqrt(vh) + 1e-8);
+    }
+    for (let d = 0; d < 4; d++)  // shelter is middlegame only
+      W[NS + 389 + d] = 0;
+    status.textContent = 'epoch ' + epoch + ' of ' + epochs + ', loss ' + losses[losses.length - 1].toFixed(5) + ', '
+      + Math.round((performance.now() - t0) / epoch) + ' ms per epoch';
+    draw();
+  }
+  running = false;
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  status.textContent += running ? '' : ', done';
+}
+
+startBtn.onclick = train;
+stopBtn.onclick = function() { running = false; };
+document.getElementById('file').onchange = function() {
+  const f = this.files[0];
+  if (!f)
+    return;
+  f.text().then(load);
+};
+
+makeMaps();
+status.textContent = 'fetching the positions';
+fetch('quiet-labeled.epd').then(function(r) { return r.text(); }).then(load);
+</script>
+
+</body>
+</html>

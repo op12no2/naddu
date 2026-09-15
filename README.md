@@ -55,6 +55,7 @@ Try this example here: https://op12no2.github.io/naddu/examples/hello_world.html
 - [symmetry](https://op12no2.github.io/naddu/examples/symmetry.html) - eight workers play random games and check every position evals the same when colour flipped.
 - [walk](https://op12no2.github.io/naddu/examples/walk.html) - a random walk over the search parameters or the eval features, each candidate plays the current best on a clock, a toy tuner.
 - [inertia](https://op12no2.github.io/naddu/examples/inertia.html) - nudge every search parameter or eval feature down and up and see how far the STS score moves.
+- [tuner](https://op12no2.github.io/naddu/examples/tuner.html) - a gradient descent tuner for the whole eval on 725,000 result labelled positions, from the engine values or from zero, workers share the data.
 
 ## UCI commands
 
