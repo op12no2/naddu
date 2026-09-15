@@ -274,7 +274,8 @@ function parse(text, W) {
     ph.push(Math.min(24, p));
     res.push(r);
     sg.push(stm);
-    // mop up with the engine's values: no pawns and an endgame lead of 200
+    // mop up with the engine's values: no pawns and an endgame lead of 200, the endgame totals
+    // include the king distance terms as they do in the engine
     let m = 0;
     if (!counts[1] && board.indexOf(1) < 0) {
       let egW = 0, egB = 0;
@@ -283,10 +284,16 @@ function parse(text, W) {
           continue;
         const type = board[s];
         const sq64 = (s >> 4) * 8 + (s & 7);
-        if (colour[s])
+        if (colour[s]) {
           egB += (type <= 5 ? W[NS + 384 + type - 1] : 0) + W[NS + (type - 1) * 64 + (sq64 ^ 56)];
-        else
+          if (type >= 2 && type <= 5)
+            egB += W[NS + 393 + type - 2] * (7 - DIST[0x77 + s - wk]) + W[NS + 397 + type - 2] * (7 - DIST[0x77 + s - bk]);
+        }
+        else {
           egW += (type <= 5 ? W[NS + 384 + type - 1] : 0) + W[NS + (type - 1) * 64 + sq64];
+          if (type >= 2 && type <= 5)
+            egW += W[NS + 393 + type - 2] * (7 - DIST[0x77 + s - bk]) + W[NS + 397 + type - 2] * (7 - DIST[0x77 + s - wk]);
+        }
       }
       if (Math.abs(egW - egB) >= 200) {
         const lk = egW > egB ? bk : wk;
