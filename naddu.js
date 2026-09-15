@@ -1637,8 +1637,9 @@ function printPst(c, ph, piece) {
 
 // pst                                        print all the tables
 // pst def                                    reset all the tables
-// pst <piece> [mg|eg] [def|<sq> <v>|<64 v>]  print, reset or set, <piece> is p n b r q k for
-//   both colours mirrored, or wn bq etc for one colour as absolute squares, values a1..h8
+// pst <piece> [mg|eg] [def|<sq>|<sq> <v>|<64 v>]  print, reset or set, <piece> is p n b r q k
+//   for both colours mirrored, or wn bq etc for one colour as absolute squares, values a1..h8
+//   a square on its own prints its values, white then black and mg then eg as far as asked
 // https://www.chessprogramming.org/Piece-Square_Tables
 function pstCommand(tokens) {
   const t = [];
@@ -1672,6 +1673,15 @@ function pstCommand(tokens) {
       for (let b = 0; b < colours.length; b++)
         for (let d = 0; d < phases.length; d++)
           printPst(colours[b], phases[d], pieces[a]);
+    return;
+  }
+  if (rest.length === 1 && /^[a-h][1-8]$/.test(rest[0])) {
+    const sq = (rest[0].charCodeAt(1) - 49) * 16 + rest[0].charCodeAt(0) - 97;
+    let line = 'pst ' + t.slice(0, i).join(' ') + ' ' + rest[0];
+    for (let b = 0; b < colours.length; b++)
+      for (let d = 0; d < phases.length; d++)
+        line += ' ' + PST[colours[b]][phases[d]][pieces[0]][mirror && colours[b] ? sq ^ 0x70 : sq];
+    uciWrite(line);
     return;
   }
   if (rest.length === 1 && rest[0] === 'def') {
@@ -2535,7 +2545,7 @@ function execTokens(tokens) {
       uciWrite('moves (l)                   list the legal moves, or checkmate/stalemate if there are none');
       uciWrite('eval (e)                    show the static eval of the current position');
       uciWrite('pst                         show the piece square tables, wn mg etc, a1 to h8');
-      uciWrite('pst <piece> [mg|eg] [def|<sq> <v>|<64 v>]  print, reset or set a table, see the readme');
+      uciWrite('pst <piece> [mg|eg] [def|<sq>|<sq> <v>|<64 v>]  print, reset or set a table, see the readme');
       uciWrite('perft (f) <depth>           count leaf nodes to the given depth');
       uciWrite('bench (h)                   search 50 positions and report nodes and nps');
       uciWrite('evaltests (et)              show the eval of the bench positions');

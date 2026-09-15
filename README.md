@@ -130,6 +130,7 @@ endgame. Not case sensitive. Any change clears the hash.
 
 - `pst` - print all 24 tables, one line each, e.g. `pst wn mg <64 values>`.
 - `pst n` or `pst wn mg` - print some of them.
+- `pst n mg e4` - print one square, `pst n e4` prints white mg, white eg, black mg, black eg, black being e5.
 - `pst n mg e4 25` - set one square, white e4 and black e5.
 - `pst bn mg e4 25` - set one square for black only.
 - `pst n mg <64 values>` - set a table, a printed line can be pasted back.
