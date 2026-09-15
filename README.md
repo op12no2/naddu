@@ -10,9 +10,7 @@ The code is written in a straightforward style and deliberately easy to tweak.
 
 Strength is around 2000 Elo.
 
-The eval was tuned from zero on 725,000 positions with the tuner example, so the values are Naddu's own, see Tuning.
-
-The hash table defaults to 16 MB and can be set with `setoption name Hash value <mb>`.
+The eval was tuned from zero on 725,000 positions with the `tuner` example, so the values are Naddu's own, see the Tuning section below.
 
 ## Hello world
 

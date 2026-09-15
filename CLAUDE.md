@@ -7,12 +7,6 @@ It's designed to be used in web pages and easily tweaked by users.
 However it can be used on the command line via `Node` and `Bun` and `Bun`
 can be used to create binaries.
 
-I do not want Naddu to get bloated and complicated.
-
-I am not primarily chasing Elo, but more Elo is always nice.
-
-Simplicity is just as important.
-
 ## test
 
 `releases/naddu.js` contains the reference version we are aiming to improve.
