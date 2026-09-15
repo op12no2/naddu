@@ -125,7 +125,8 @@ q
 
 The `pst` command prints, sets and resets the piece square tables, so a page or a script can restyle the engine
 without editing it. Pieces are `p n b r q k`, which means both colours with black mirrored, or `wn`, `bq` etc for one
-colour. Squares are absolute, `e4` is e4 for either colour. Values are in centipawns a1 to h8, mg is middlegame and eg
+colour. Squares are absolute, `e4` is e4 for either colour. Values are whole centipawns separated by spaces, any
+whitespace will do, in the order a1 b1 ... h1 a2 ... h8, i.e. rank by rank from white's side. mg is middlegame and eg
 endgame. Not case sensitive. Any change clears the hash.
 
 - `pst` - print all 24 tables, one line each, e.g. `pst wn mg <64 values>`.
@@ -133,13 +134,13 @@ endgame. Not case sensitive. Any change clears the hash.
 - `pst n mg e4` - print one square, `pst n e4` prints white mg, white eg, black mg, black eg, black being e5.
 - `pst n mg e4 25` - set one square, white e4 and black e5.
 - `pst bn mg e4 25` - set one square for black only.
-- `pst n mg <64 values>` - set a table, a printed line can be pasted back.
+- `pst n mg -105 -21 -58 ... -107` - set a table from 64 values, a printed line can be pasted back.
 - `pst n mg def`, `pst n def`, `pst def` - reset a table, a piece or everything to the PeSTO values.
 
 ## Features
 
-The `feature` command prints, sets and resets the other numbers in the eval the same way. Values are given all at
-once, a printed line can be pasted back, and any change clears the hash. `feature` prints everything, `feature def`
+The `feature` command prints, sets and resets the other numbers in the eval the same way. Values are whole numbers
+separated by spaces and given all at once, a printed line can be pasted back, and any change clears the hash. `feature` prints everything, `feature def`
 resets everything.
 
 - `feature tempo 10` - bonus for the side to move.
