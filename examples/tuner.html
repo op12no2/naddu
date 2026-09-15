@@ -42,7 +42,8 @@
   }
   #values td, #values th {
     text-align: right;
-    padding: 0.2em 1em 0.2em 0;
+    padding: 0.2em 0.8em;
+    border: 1px solid #ddd;
   }
   #values td:first-child, #values th:first-child { text-align: left; }
   #chart {
@@ -78,7 +79,9 @@ itself.</p>
 <p>The page carries its own copy of the eval as feature coefficients, so on loading it evaluates 2000 positions
 both ways and reports whether they match. If a feature is added to <code>naddu.js</code> it must be added here too
 and that check is how you know. Start from the engine's values to refine them, or from zero to watch the tables
-grow out of nothing. The result is printed as <code>pst</code> and <code>feature</code> lines to paste into the
+grow out of nothing. The rate is Adam's step size in centipawns: early on every weight moves by about that much per
+epoch whatever its gradient, then the steps shrink as a weight's gradient settles, so a high rate gets off the ground
+fast and a low rate finishes neatly; 4 from zero, 1 or less from the engine's values. The result is printed as <code>pst</code> and <code>feature</code> lines to paste into the
 console page or a script, and being fitted to results it still has to earn its place in a match.</p>
 
 <p id="controls">
@@ -89,7 +92,6 @@ console page or a script, and being fitted to results it still has to earn its p
   <label>Epochs <input id="epochs" type="number" value="500" min="1" style="width:5em"></label>
   <button id="start" disabled>Start</button>
   <button id="stop" disabled>Stop</button>
-  <label>Own file <input id="file" type="file" accept=".epd,.txt"></label>
 </p>
 
 <p id="status"></p>
@@ -719,13 +721,6 @@ async function train() {
 
 startBtn.onclick = train;
 stopBtn.onclick = function() { running = false; };
-document.getElementById('file').onchange = function() {
-  const f = this.files[0];
-  if (!f)
-    return;
-  f.text().then(load);
-};
-
 makeMaps();
 status.textContent = 'fetching the positions';
 fetch('quiet-labeled.epd').then(function(r) { return r.text(); }).then(load);
