@@ -1350,6 +1350,38 @@ function shelter(board, king, pawn, dir) {
 // bonus for the side to move https://www.chessprogramming.org/Tempo
 const TEMPO = new Int16Array([10]);
 
+// king distance terms for N B R Q, [phase][piece type], per step closer, zero by default so just knobs
+// smother is closeness to the enemy king https://www.chessprogramming.org/King_Safety#Tropism
+// cuddle is closeness to the own king
+// flat arrays and a flag so the loop in evaluate() pays nothing while they are all zero
+const SMOTHER_MG = new Int16Array(7);
+const SMOTHER_EG = new Int16Array(7);
+const CUDDLE_MG = new Int16Array(7);
+const CUDDLE_EG = new Int16Array(7);
+let KING_TERMS = 0;
+
+function kingTermsInit() {
+  KING_TERMS = 0;
+  for (let type = KNIGHT; type <= QUEEN; type++)
+    if (SMOTHER_MG[type] || SMOTHER_EG[type] || CUDDLE_MG[type] || CUDDLE_EG[type])
+      KING_TERMS = 1;
+}
+
+// king step distance between two 0x88 squares, indexed by 0x77 + a - b which is unique per square pair
+const DIST = new Int8Array(0xef);
+
+function distInitOnce() {
+  for (let a = 0; a < 128; a++) {
+    if (a & 0x88)
+      continue;
+    for (let b = 0; b < 128; b++) {
+      if (b & 0x88)
+        continue;
+      DIST[0x77 + a - b] = Math.max(Math.abs((a & 7) - (b & 7)), Math.abs((a >> 4) - (b >> 4)));
+    }
+  }
+}
+
 // mop up in pawnless endings: per step of the losing king from the centre, per step the kings are close, the lead needed
 const MOPUP = new Int16Array([10, 8, 200]);
 
@@ -1400,6 +1432,32 @@ function evaluate(node) {
       nw++; // number of white pieces on board
       mgW += MGW[type][sq];
       egW += EGW[type][sq];
+    }
+  }
+
+  // king distance terms for N B R Q, a second walk so the loop above costs nothing while they are off
+  if (KING_TERMS) {
+    const wk = pos.kings[0];
+    const bk = pos.kings[1];
+    for (let sq = 0; sq < 128; sq++) {
+      if (sq & 0x88)
+        continue;
+      const piece = board[sq];
+      const type = piece & 7;
+      if (type < KNIGHT || type > QUEEN)
+        continue;
+      if (piece & BLACK) {
+        const own = 7 - DIST[0x77 + sq - bk];
+        const enemy = 7 - DIST[0x77 + sq - wk];
+        mgB += CUDDLE_MG[type] * own + SMOTHER_MG[type] * enemy;
+        egB += CUDDLE_EG[type] * own + SMOTHER_EG[type] * enemy;
+      }
+      else {
+        const own = 7 - DIST[0x77 + sq - wk];
+        const enemy = 7 - DIST[0x77 + sq - bk];
+        mgW += CUDDLE_MG[type] * own + SMOTHER_MG[type] * enemy;
+        egW += CUDDLE_EG[type] * own + SMOTHER_EG[type] * enemy;
+      }
     }
   }
 
@@ -1739,6 +1797,8 @@ function evalVerbose(node) {
   const board = pos.board;
   const mat = [[0, 0], [0, 0]];  // [colour][phase]
   const pst = [[0, 0], [0, 0]];
+  const smo = [[0, 0], [0, 0]];
+  const cud = [[0, 0], [0, 0]];
   const shel = [0, 0];
   const mop = [0, 0];
   let phase = 0;
@@ -1757,6 +1817,10 @@ function evalVerbose(node) {
     for (let ph = 0; ph < 2; ph++) {
       mat[c][ph] += MAT[c][ph][type];
       pst[c][ph] += PST[c][ph][type][sq];
+      if (type >= KNIGHT && type <= QUEEN) {
+        smo[c][ph] += (ph ? SMOTHER_EG : SMOTHER_MG)[type] * (7 - DIST[0x77 + sq - pos.kings[c ^ 1]]);
+        cud[c][ph] += (ph ? CUDDLE_EG : CUDDLE_MG)[type] * (7 - DIST[0x77 + sq - pos.kings[c]]);
+      }
     }
   }
 
@@ -1767,8 +1831,8 @@ function evalVerbose(node) {
 
   const draw = n === 2 || n === 3 && (counts[KNIGHT] || counts[BISHOP] || counts[KNIGHT | BLACK] || counts[BISHOP | BLACK]);
 
-  const egW = mat[0][1] + pst[0][1];
-  const egB = mat[1][1] + pst[1][1];
+  const egW = mat[0][1] + pst[0][1] + smo[0][1] + cud[0][1];
+  const egB = mat[1][1] + pst[1][1] + smo[1][1] + cud[1][1];
   if (!draw && counts[PAWN] + counts[PAWN | BLACK] === 0 && Math.abs(egW - egB) >= MOPUP[2]) {
     const wk = pos.kings[0];
     const bk = pos.kings[1];
@@ -1786,12 +1850,14 @@ function evalVerbose(node) {
   row('term', 'white mg', 'white eg', 'black mg', 'black eg', 'mg', 'eg');
   row('material', mat[0][0], mat[0][1], mat[1][0], mat[1][1]);
   row('pst', pst[0][0], pst[0][1], pst[1][0], pst[1][1]);
+  row('smother', smo[0][0], smo[0][1], smo[1][0], smo[1][1]);
+  row('cuddle', cud[0][0], cud[0][1], cud[1][0], cud[1][1]);
   row('shelter', shel[0], 0, shel[1], 0);
   row('mopup', mop[0], mop[0], mop[1], mop[1]);
-  const tw0 = mat[0][0] + pst[0][0] + shel[0] + mop[0];
-  const tw1 = mat[0][1] + pst[0][1] + mop[0];
-  const tb0 = mat[1][0] + pst[1][0] + shel[1] + mop[1];
-  const tb1 = mat[1][1] + pst[1][1] + mop[1];
+  const tw0 = mat[0][0] + pst[0][0] + smo[0][0] + cud[0][0] + shel[0] + mop[0];
+  const tw1 = egW + mop[0];
+  const tb0 = mat[1][0] + pst[1][0] + smo[1][0] + cud[1][0] + shel[1] + mop[1];
+  const tb1 = egB + mop[1];
   row('total', tw0, tw1, tb0, tb1);
 
   if (phase > PHASE_TOTAL)
@@ -1814,6 +1880,11 @@ const FEATURES = {
   mopup:   [MOPUP, 0, [10, 8, 200]]
 };
 const DEF_MAT = [[82, 337, 365, 477, 1025], [94, 281, 297, 512, 936]];
+// features with a middlegame and an endgame list, knight to queen: name => [[mg array, eg array], first index, [mg defaults, eg defaults]]
+const PHASED = {
+  smother: [[SMOTHER_MG, SMOTHER_EG], KNIGHT, [[0, 0, 0, 0], [0, 0, 0, 0]]],
+  cuddle:  [[CUDDLE_MG, CUDDLE_EG], KNIGHT, [[0, 0, 0, 0], [0, 0, 0, 0]]]
+};
 
 // print "<cmd> <name> <values>" for one entry of a feature or search list
 function printNumbers(cmd, name, arr, first, n) {
@@ -1862,6 +1933,9 @@ function featureCommand(tokens) {
   if (t.length === 0 || t.length === 1 && t[0] === 'def') {
     for (const name in FEATURES)
       list.push([name, FEATURES[name][0], FEATURES[name][1], FEATURES[name][2]]);
+    for (const name in PHASED)
+      for (let ph = 0; ph < 2; ph++)
+        list.push([name + (ph ? ' eg' : ' mg'), PHASED[name][0][ph], PHASED[name][1], PHASED[name][2][ph]]);
     for (let c = 0; c < 2; c++)
       for (let ph = 0; ph < 2; ph++)
         list.push([(c ? 'bmat' : 'wmat') + (ph ? ' eg' : ' mg'), MAT[c][ph], PAWN, DEF_MAT[ph]]);
@@ -1869,6 +1943,11 @@ function featureCommand(tokens) {
   else if (FEATURES[t[0]]) {
     list.push([t[0], FEATURES[t[0]][0], FEATURES[t[0]][1], FEATURES[t[0]][2]]);
     i = 1;
+  }
+  else if (PHASED[t[0]] && (t[1] === 'mg' || t[1] === 'eg')) {
+    const ph = t[1] === 'eg' ? 1 : 0;
+    list.push([t[0] + ' ' + t[1], PHASED[t[0]][0][ph], PHASED[t[0]][1], PHASED[t[0]][2][ph]]);
+    i = 2;
   }
   else if ((t[0] === 'mat' || t[0] === 'wmat' || t[0] === 'bmat') && (t[1] === 'mg' || t[1] === 'eg')) {
     const ph = t[1] === 'eg' ? 1 : 0;
@@ -1890,6 +1969,7 @@ function featureCommand(tokens) {
   if (!setNumbers('feature', list, rest))
     return;
   phaseTotal();
+  kingTermsInit();
   for (let piece = PAWN; piece <= KING; piece++)
     evalInit(piece);
   ttClear();  // scores in the hash were for the old eval
@@ -2816,6 +2896,7 @@ function uciQuit() {
 }
 
 nodeInitOnce();
+distInitOnce();
 evalInitOnce();
 zobInitOnce();
 ttInit(TT_DEFAULT_MB);

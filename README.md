@@ -181,6 +181,8 @@ feature <name> <v1> ... <vn>
 - `phase <n> <b> <r> <q>` - phase weights, the taper runs from their total at the start down to 0.
 - `shelter <v0> <v1> <v2> <v3>` - king shelter penalty by the distance of the nearest own pawn ahead of the king.
 - `mopup <centre> <close> <lead>` - mop up bonus in pawnless endings.
+- `smother mg|eg <n> <b> <r> <q>` - bonus per step a piece is closer to the enemy king, off by default.
+- `cuddle mg|eg <n> <b> <r> <q>` - bonus per step a piece is closer to its own king, off by default.
 - `mat mg|eg <p> <n> <b> <r> <q>` - material for both colours, `wmat` or `bmat` for one.
 
 ### Examples
@@ -205,6 +207,13 @@ about pawn cover, `feature shelter 0 0 0 0` turns it off.
 `feature mopup 10 8 200` are the defaults. In an ending with no pawns and a lead of at least 200 the winning side gets
 10 per step the losing king is from the centre plus 8 per step the two kings are close, which drives the king to the
 edge and the mating king towards it.
+
+`feature smother mg 3 2 2 4` gives a knight 3, a bishop 2, a rook 2 and a queen 4 for every king step it is nearer
+the enemy king in the middlegame, so a queen next to the enemy king gets 24 and one seven steps away nothing. This
+is <a href="https://www.chessprogramming.org/King_Safety#Tropism">king tropism</a>, the engine goes after the king.
+`feature cuddle eg 0 0 2 0` is the opposite, rooks like to be near their own king in the endgame. Both are off by
+default, all zeros, and cost nothing then. When any of them is set the eval walks the board a second time, which
+costs about a fifth of the speed, so they are knobs for a style rather than free strength.
 
 `feature mat mg 82 337 365 477 1025` are the default middlegame values for pawn, knight, bishop, rook and queen.
 `feature mat eg 94 281 297 512 936` the endgame ones. `feature bmat mg 82 337 400 477 1025` makes black alone value
@@ -271,6 +280,8 @@ side to move's view plus the tempo. A draw by material is reported and gives 0. 
 term      white mg white eg black mg black eg       mg       eg
 material      1025      936        0        0     1025      936
 pst             -5      -96      -39       24       34     -120
+smother          0        0        0        0        0        0
+cuddle           0        0        0        0        0        0
 shelter          0        0      -48        0       48        0
 mopup           56       56        0        0       56       56
 total         1076      896      -87       24     1163      872
