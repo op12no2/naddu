@@ -85,7 +85,9 @@ and that check is how you know. Start from the engine's values to refine them, o
 grow out of nothing. The rate is Adam's step size in centipawns: early on every weight moves by about that much per
 epoch whatever its gradient, then the steps shrink as a weight's gradient settles, so a high rate gets off the ground
 fast and a low rate finishes neatly; 4 from zero, 1 or less from the engine's values. The result is printed as <code>pst</code> and <code>feature</code> lines to paste into the
-console page or a script, and being fitted to results it still has to earn its place in a match.</p>
+console page or a script, or to save to a file for <code>node tooling/apply.js</code>, which writes them into the
+defaults in <code>naddu.js</code> so a match can test them. Being fitted to results they still have to earn their
+place that way.</p>
 
 <p id="controls">
   <label>Positions <input id="count" type="number" value="725000" min="1000" step="1000" style="width:7em"></label>

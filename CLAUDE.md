@@ -46,6 +46,7 @@ in the todo notes below are from that; 10+0.1 is a more realistic tc and about 4
 - extra args are passed to fastchess
 - speed-only patches (bench node count unchanged) don't need a match, compare bench nps
 - `BASE=/path/to/engine ./tooling/match.sh` plays dev against any uci engine; `TIMEMARGIN=2500` for engines that overshoot the clock
+- `node tooling/apply.js lines.txt` writes pst, feature and search lines (the tuner and walk output) into the defaults in `naddu.js`, then match as usual; the live values are filled from those defaults at startup so each has one home
 
 Strength estimate (Sep 3 2026, engine at commit aec6051, 2+0.2, 2000 games each, vs Stash with the user's ratings
 14=2058 15=2173 17=2297 18=2380): +260, +171, +92, +7 => about 2350 at this tc. Old Stash versions lose on time at 1+0.1,
