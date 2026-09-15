@@ -49,6 +49,7 @@ Try this example here: https://op12no2.github.io/naddu/examples/hello_world.html
 - [parallel](https://op12no2.github.io/naddu/examples/parallel.html) - workers share out the root moves of one position and search them together.
 - [arena](https://op12no2.github.io/naddu/examples/arena.html) - a round robin between the five strength levels, twenty workers, live crosstable.
 - [landscape](https://op12no2.github.io/naddu/examples/landscape.html) - a worker per piece tries it on every empty square, heat maps of where the eval would like each piece.
+- [game](https://op12no2.github.io/naddu/examples/game.html) - the engine plays itself on a clock with a live score graph, time bars and a deeper second opinion from a worker pool.
 
 ## Command line
 

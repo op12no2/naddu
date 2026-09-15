@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Game graph</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 70em;
+    margin: 2em auto;
+    padding: 0 1em;
+  }
+  #controls label { margin-right: 1em; }
+  #main {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2em;
+    align-items: flex-start;
+    margin: 1em 0;
+  }
+  #board {
+    display: grid;
+    grid-template-columns: repeat(8, 48px);
+    grid-template-rows: repeat(8, 48px);
+    border: 2px solid #444;
+  }
+  .sq {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 34px;
+    line-height: 1;
+    user-select: none;
+  }
+  .light { background: #eed; }
+  .dark { background: #997; }
+  #chart {
+    flex: 1;
+    min-width: 400px;
+    border: 1px solid #ddd;
+  }
+  #status, #summary { font-weight: bold; }
+  #legend, #status, #summary, #moves {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 13px;
+    white-space: pre-wrap;
+  }
+</style>
+</head>
+<body>
+
+<h1>Game graph</h1>
+
+<p>The engine plays itself on a game clock while the score it reports for each move is plotted, from white's side,
+with the time the <a href="https://www.chessprogramming.org/Time_Management">time manager</a> chose to spend on each
+move as bars underneath. Behind it a pool of workers takes every position of the game and searches it to a fixed
+depth, plotting a second line, so the quick clock search and the deep search can be compared. Where the two lines
+part is where the game was decided, or where the quick search was wrong. Scores are clipped to ten pawns and a mate
+is drawn at the edge. Both sides use the same worker, which is fine since they are the same engine. Game end is
+checked by the page: checkmate, stalemate, threefold repetition, fifty moves, insufficient material or a 300 ply
+cap.</p>
+
+<p id="controls">
+  <label>Clock <input id="clock" type="number" value="10" min="1" style="width:4em"> s</label>
+  <label>+ <input id="inc" type="number" value="0.1" min="0" step="0.1" style="width:4em"> s</label>
+  <label>Deep depth <input id="depth" type="number" value="10" min="1" max="20" style="width:4em"></label>
+  <label>Annotators <input id="pool" type="number" value="4" min="1" max="16" style="width:4em"></label>
+  <button id="start">Start</button>
+</p>
+
+<div id="main">
+  <div id="board"></div>
+  <svg id="chart" viewBox="0 0 800 340" preserveAspectRatio="none"></svg>
+</div>
+
+<p id="legend">score: quick clock search in blue, deep search in red.  bars: time per move</p>
+<p id="status"></p>
+<p id="summary"></p>
+<p id="moves"></p>
+
+<script>
+const PIECES = {
+  K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙',
+  k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟',
+  '.': ''
+};
+const FILES = 'abcdefgh';
+const MAX_PLY = 300;
+const CLIP = 1000;   // centipawns at the top and bottom of the chart
+const SVG = 'http://www.w3.org/2000/svg';
+
+const boardEl = document.getElementById('board');
+const chart = document.getElementById('chart');
+const status = document.getElementById('status');
+const summary = document.getElementById('summary');
+const movesEl = document.getElementById('moves');
+
+let player = null;
+let annotators = [];
+let moves = [];
+let rows = [];
+let stm = 'white';
+let keys = {};
+let hmc = 0;
+let clock = [0, 0];   // ms left, white and black
+let t0 = 0;
+let quick = [];       // score after each ply, white's view, from the player's own search
+let times = [];       // ms spent on each ply
+let deep = [];        // score at each ply from the annotators, sparse
+let queue = [];       // plies waiting for an annotator
+let gameOver = '';
+let lastScore = 0;
+
+function makeBoard(el) {
+  for (let rank = 8; rank >= 1; rank--) {
+    for (let file = 0; file < 8; file++) {
+      const sq = document.createElement('div');
+      sq.className = 'sq ' + ((rank + file) % 2 ? 'dark' : 'light');
+      el.appendChild(sq);
+    }
+  }
+}
+
+function show(el) {
+  for (let r = 0; r < 8; r++)
+    for (let f = 0; f < 8; f++)
+      el.children[r * 8 + f].textContent = PIECES[rows[r][f]];
+}
+
+// score from an info line as centipawns for the side to move, mates pushed to the clip
+function parseScore(line) {
+  const m = line.match(/score (cp|mate) (-?\d+)/);
+  if (!m)
+    return null;
+  if (m[1] === 'cp')
+    return Math.max(-CLIP, Math.min(CLIP, parseInt(m[2])));
+  return parseInt(m[2]) > 0 ? CLIP : -CLIP;
+}
+
+// the chart: scores in the top part, time bars in the bottom part
+function drawChart() {
+  const n = Math.max(moves.length, 40);
+  const x = function(ply) { return 30 + ply / n * 760; };
+  const y = function(score) { return 130 - score / CLIP * 120; };
+  let maxT = 100;
+  for (let i = 0; i < times.length; i++)
+    maxT = Math.max(maxT, times[i]);
+  let html = '<line x1="30" y1="130" x2="790" y2="130" stroke="#999"/>'
+    + '<line x1="30" y1="10" x2="30" y2="250" stroke="#999"/>'
+    + '<line x1="30" y1="330" x2="790" y2="330" stroke="#999"/>'
+    + '<text x="4" y="14" font-size="11">+10</text><text x="4" y="134" font-size="11">0</text><text x="4" y="254" font-size="11">-10</text>'
+    + '<text x="4" y="270" font-size="11">' + Math.round(maxT) + 'ms</text>';
+  let q = '';
+  for (let i = 0; i < quick.length; i++)
+    q += x(i + 1) + ',' + y(quick[i]) + ' ';
+  html += '<polyline points="' + q + '" fill="none" stroke="#36c" stroke-width="1.5"/>';
+  let d = '';
+  for (let i = 0; i <= moves.length; i++)
+    if (deep[i] !== undefined)
+      d += x(i) + ',' + y(deep[i]) + ' ';
+  html += '<polyline points="' + d + '" fill="none" stroke="#c33" stroke-width="1.5"/>';
+  for (let i = 0; i < times.length; i++) {
+    const h = times[i] / maxT * 70;
+    html += '<rect x="' + x(i + 1) + '" y="' + (330 - h) + '" width="' + Math.max(1, 760 / n - 1) + '" height="' + h + '" fill="' + (i % 2 ? '#666' : '#bbb') + '"/>';
+  }
+  chart.innerHTML = html;
+}
+
+// hand plies to free annotators
+function annotate() {
+  for (let i = 0; i < annotators.length && queue.length; i++) {
+    const a = annotators[i];
+    if (a.ply >= 0)
+      continue;
+    a.ply = queue.shift();
+    a.worker.postMessage('ucinewgame');
+    a.worker.postMessage('position startpos moves ' + moves.slice(0, a.ply).join(' '));
+    a.worker.postMessage('go depth ' + document.getElementById('depth').value);
+  }
+}
+
+function onAnnotator(a, line) {
+  if (line.startsWith('info ')) {
+    const s = parseScore(line);
+    if (s !== null)
+      a.score = s;
+  }
+  else if (line.startsWith('bestmove ')) {
+    deep[a.ply] = a.ply % 2 ? -a.score : a.score;
+    a.ply = -1;
+    drawChart();
+    annotate();
+    if (gameOver && queue.length === 0 && annotators.every(function(x) { return x.ply < 0; }))
+      finish();
+  }
+}
+
+function finish() {
+  let disagree = 0;
+  for (let i = 0; i < quick.length; i++)
+    if (deep[i + 1] !== undefined && Math.abs(deep[i + 1] - quick[i]) >= 100)
+      disagree++;
+  summary.textContent = gameOver + ' after ' + moves.length + ' plies, the deep search disagreed by a pawn or more on ' + disagree + ' of them';
+  for (let i = 0; i < annotators.length; i++)
+    annotators[i].worker.terminate();
+}
+
+function step() {
+  rows = [];
+  player.postMessage('position startpos moves ' + moves.join(' '));
+  player.postMessage('board');
+  player.postMessage('moves');
+}
+
+function checkDraw() {
+  const key = rows.join('') + stm;
+  keys[key] = (keys[key] || 0) + 1;
+  if (keys[key] >= 3)
+    return 'Draw by threefold repetition';
+  if (hmc >= 100)
+    return 'Draw by the fifty move rule';
+  if (moves.length >= MAX_PLY)
+    return 'Draw by the ply cap';
+  let minors = 0;
+  for (let r = 0; r < 8; r++) {
+    for (let f = 0; f < 8; f++) {
+      const c = rows[r][f].toLowerCase();
+      if (c === 'p' || c === 'r' || c === 'q')
+        return '';
+      if (c === 'n' || c === 'b')
+        minors++;
+    }
+  }
+  return minors <= 1 ? 'Draw by insufficient material' : '';
+}
+
+function endGame(why) {
+  gameOver = why;
+  status.textContent = why;
+  player.terminate();
+  if (queue.length === 0 && annotators.every(function(x) { return x.ply < 0; }))
+    finish();
+}
+
+function onPlayer(line) {
+  const row = line.match(/^([1-8])  ((?:[rnbqkpRNBQKP.] ){8})$/);
+  if (row) {
+    rows[8 - parseInt(row[1])] = row[2].trim().split(' ');
+    if (row[1] === '1')
+      show(boardEl);
+  }
+  else if (line.startsWith('stm: ')) {
+    stm = line.slice(5);
+  }
+  else if (line === 'checkmate') {
+    endGame('Checkmate, ' + (stm === 'white' ? 'black' : 'white') + ' wins');
+  }
+  else if (line === 'stalemate') {
+    endGame('Draw by stalemate');
+  }
+  else if (/^([a-h][1-8][a-h][1-8][qrbn]? ?)+$/.test(line)) {
+    const why = checkDraw();
+    if (why) {
+      endGame(why);
+      return;
+    }
+    const inc = Math.round(parseFloat(document.getElementById('inc').value) * 1000);
+    status.textContent = 'ply ' + (moves.length + 1) + ', ' + stm + ' to move, clocks ' + (clock[0] / 1000).toFixed(1) + ' ' + (clock[1] / 1000).toFixed(1);
+    t0 = performance.now();
+    player.postMessage('go wtime ' + clock[0] + ' btime ' + clock[1] + ' winc ' + inc + ' binc ' + inc);
+  }
+  else if (line.startsWith('info ')) {
+    const s = parseScore(line);
+    if (s !== null)
+      lastScore = s;
+  }
+  else if (line.startsWith('bestmove ')) {
+    const move = line.split(' ')[1];
+    const ms = performance.now() - t0;
+    const side = stm === 'white' ? 0 : 1;
+    const inc = Math.round(parseFloat(document.getElementById('inc').value) * 1000);
+    clock[side] = clock[side] - Math.round(ms) + inc;
+    if (clock[side] < 0) {
+      endGame(stm + ' lost on time');
+      return;
+    }
+    const from = rows[8 - parseInt(move[1])][FILES.indexOf(move[0])];
+    const to = rows[8 - parseInt(move[3])][FILES.indexOf(move[2])];
+    hmc = from.toLowerCase() === 'p' || to !== '.' ? 0 : hmc + 1;
+    moves.push(move);
+    quick.push(side ? -lastScore : lastScore);
+    times.push(ms);
+    movesEl.textContent = moves.join(' ');
+    queue.push(moves.length);
+    annotate();
+    drawChart();
+    step();
+  }
+}
+
+function start() {
+  if (player)
+    player.terminate();
+  for (let i = 0; i < annotators.length; i++)
+    annotators[i].worker.terminate();
+  moves = [];
+  keys = {};
+  hmc = 0;
+  quick = [];
+  times = [];
+  deep = [];
+  queue = [0];
+  gameOver = '';
+  summary.textContent = '';
+  movesEl.textContent = '';
+  clock = [0, 0];
+  clock[0] = clock[1] = Math.round(parseFloat(document.getElementById('clock').value) * 1000);
+  player = new Worker('../naddu.js');
+  player.onmessage = function(e) { onPlayer(e.data); };
+  player.postMessage('ucinewgame');
+  annotators = [];
+  const n = parseInt(document.getElementById('pool').value);
+  for (let i = 0; i < n; i++) {
+    const a = {worker: new Worker('../naddu.js'), ply: -1, score: 0};
+    a.worker.onmessage = function(e) { onAnnotator(a, e.data); };
+    annotators.push(a);
+  }
+  annotate();
+  drawChart();
+  step();
+}
+
+makeBoard(boardEl);
+document.getElementById('start').onclick = start;
+
+start();
+</script>
+
+</body>
+</html>
