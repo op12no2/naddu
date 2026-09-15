@@ -75,7 +75,9 @@ squared error against the actual result, and
 epoch. Every term is linear in its weights so the gradients are exact. The phase weights and mop up are not tuned,
 mop up is carried as a constant per position. Material and the tables are collinear, a piece count is the sum of
 its table coefficients, so after each step each table's mean is moved into the material, which changes no eval but
-keeps the numbers readable; the shelter values are re-based the same way so a pawn in front stays at 0. The positions are parsed and the gradients summed by a pool of
+keeps the numbers readable; the shelter values are re-based the same way so a pawn in front stays at 0. The
+middlegame pawn is pinned at 100 by scaling all the weights after each step and K the other way, so the eval always
+reads in pawns and K floats instead. The positions are parsed and the gradients summed by a pool of
 workers, each holding a share of the data, and the page never calls the engine after the start except to check
 itself.</p>
 
@@ -87,8 +89,8 @@ epoch whatever its gradient, then the steps shrink as a weight's gradient settle
 fast and a low rate finishes neatly; 4 from zero, 1 or less from the engine's values. The result is printed as <code>pst</code> and <code>feature</code> lines to paste into the
 console page or a script, or to save to a file for <code>node tooling/apply.js</code>, which writes them into the
 defaults in <code>naddu.js</code> so a match can test them. Being fitted to results they still have to earn their
-place that way. When training ends K is refitted to the result, and the ratio of the two is how much the eval's
-scale has moved: the search margins are in centipawns of the old scale, so scale them the same way, with the
+place that way. When training ends the ratio of the engine's K to the final K is how much the eval's scale has
+moved: the search margins are in centipawns of the old scale, so scale them the same way, with the
 <code>search</code> command, before a match.</p>
 
 <p id="controls">
@@ -317,13 +319,13 @@ function parse(text, W) {
 }
 
 // the eval of position i from white's side as a float, and exactly as the engine would with integer weights
-function evalOf(i, W) {
+function evalOf(i, W, S) {
   let mg = 0, eg = 0;
   for (let e = start[i]; e < start[i + 1]; e++) {
     mg += coeff[e] * W[slot[e]];
     eg += coeff[e] * W[NS + slot[e]];
   }
-  return ((mg + mop[i]) * phase[i] + (eg + mop[i]) * (24 - phase[i])) / 24 + sign[i] * W[2 * NS];
+  return ((mg + mop[i] * S) * phase[i] + (eg + mop[i] * S) * (24 - phase[i])) / 24 + sign[i] * W[2 * NS];
 }
 
 function exactEval(i, W) {
@@ -356,7 +358,7 @@ onmessage = function(m) {
   else if (d.cmd === 'loss') {
     let loss = 0;
     for (let i = 0; i < n; i++) {
-      const s = sigmoid(evalOf(i, d.W), d.K);
+      const s = sigmoid(evalOf(i, d.W, d.S), d.K);
       loss += (result[i] - s) * (result[i] - s);
     }
     postMessage({cmd: 'loss', loss: loss, n: n});
@@ -368,7 +370,7 @@ onmessage = function(m) {
     const c = Math.LN10 * K / 400;
     let loss = 0;
     for (let i = 0; i < n; i++) {
-      const s = sigmoid(evalOf(i, W), K);
+      const s = sigmoid(evalOf(i, W, d.S), K);
       const diff = result[i] - s;
       loss += diff * diff;
       const g = -2 * diff * s * (1 - s) * c;
@@ -404,11 +406,13 @@ let workers = [];
 let engine = new Float64Array(2 * NS + 1);  // the engine's own values
 let W = new Float64Array(2 * NS + 1);
 let K = 1;
+let S = 1;           // the mop up constants were made at the engine's scale, this follows the weights
 let total = 0;
 let losses = [];
 let running = false;
 let cells = [];  // [piece-1][phase] => 64 td elements
 let mA = null, vA = null, step = 0;  // adam state
+let Kengine = 1;
 
 // send one message to every worker and collect the replies
 function ask(msg, transfer) {
@@ -577,7 +581,7 @@ function makeMaps() {
 }
 
 async function lossAt(k, w) {
-  const r = await ask({cmd: 'loss', W: w, K: k});
+  const r = await ask({cmd: 'loss', W: w, K: k, S: S});
   let loss = 0;
   for (let i = 0; i < r.length; i++)
     loss += r[i].loss;
@@ -653,7 +657,9 @@ async function load(text) {
   }
   summary.textContent = ok + ' of ' + fens.length + ' positions eval the same as the engine' + (bad.length ? '\n' + bad.join('\n') : '');
   status.textContent = 'fitting K';
+  S = 1;
   K = await fitK(engine);
+  Kengine = K;
   status.textContent = total + ' positions, K ' + K.toFixed(3) + ', loss ' + (await lossAt(K, engine)).toFixed(5) + ' at the engine values, press Start';
   W = engine.slice();
   losses = [];
@@ -685,14 +691,32 @@ function recentre() {
   W[384 + 4] += 4 * c;
 }
 
+// the middlegame pawn is pinned at 100 so the eval reads in pawns: scale every weight to put it there and
+// scale K the other way, which changes no prediction; K floats and its drift from the engine's K is the
+// scale change the search margins would have to follow
+function pin() {
+  const f = 100 / W[384];
+  for (let j = 0; j < W.length; j++) {
+    W[j] *= f;
+    mA[j] *= f;
+    vA[j] *= f * f;
+  }
+  K /= f;
+  S *= f;
+}
+
 async function train() {
   running = true;
   startBtn.disabled = true;
   stopBtn.disabled = false;
-  if (document.getElementById('from').value === 'zero')
+  if (document.getElementById('from').value === 'zero') {
     W = new Float64Array(2 * NS + 1);
+    W[384] = 100;  // the pawn is the unit, see pin()
+  }
   else
     W = engine.slice();
+  K = Kengine;
+  S = 1;
   losses = [];
   mA = new Float64Array(2 * NS + 1);
   vA = new Float64Array(2 * NS + 1);
@@ -701,7 +725,7 @@ async function train() {
   const rate = parseFloat(document.getElementById('rate').value);
   const t0 = performance.now();
   for (let epoch = 1; epoch <= epochs && running; epoch++) {
-    const r = await ask({cmd: 'grad', W: W, K: K});
+    const r = await ask({cmd: 'grad', W: W, K: K, S: S});
     const grad = new Float64Array(2 * NS + 1);
     let loss = 0;
     for (let i = 0; i < r.length; i++) {
@@ -723,16 +747,15 @@ async function train() {
     for (let d = 0; d < 4; d++)  // shelter is middlegame only
       W[NS + 389 + d] = 0;
     recentre();
-    status.textContent = 'epoch ' + epoch + ' of ' + epochs + ', loss ' + losses[losses.length - 1].toFixed(5) + ', '
+    pin();
+    status.textContent = 'epoch ' + epoch + ' of ' + epochs + ', loss ' + losses[losses.length - 1].toFixed(5) + ', K ' + K.toFixed(3) + ', '
       + Math.round((performance.now() - t0) / epoch) + ' ms per epoch';
     draw();
   }
   running = false;
   startBtn.disabled = false;
   stopBtn.disabled = true;
-  // refit K to the result: the ratio says how the eval's scale has moved, which the search margins care about
-  const K2 = await fitK(W);
-  status.textContent += ', done. K refit ' + K2.toFixed(3) + ', the eval scale is x' + (K / K2).toFixed(2)
+  status.textContent += ', done. K ' + K.toFixed(3) + ', the eval scale is x' + (Kengine / K).toFixed(2)
     + ' the engine\'s, scale the search margins (rfp, futility, aspiration, mopup lead) the same way before a match';
 }
 
