@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parameter walk</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 70em;
+    margin: 2em auto;
+    padding: 0 1em;
+  }
+  #controls label { margin-right: 1em; }
+  table {
+    border-collapse: collapse;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 14px;
+    margin: 1em 0;
+  }
+  td, th {
+    text-align: left;
+    padding: 0.3em 1.2em 0.3em 0;
+    white-space: nowrap;
+  }
+  mark { background: #fd6; }
+  .testing { background: #eef; }
+  #bar {
+    width: 30em;
+    height: 1em;
+    border: 1px solid #999;
+    margin: 0.5em 0;
+  }
+  #bar div { height: 100%; background: #6a6; width: 50%; }
+  #status, #summary { font-weight: bold; }
+  #status, #best {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 14px;
+    white-space: pre-wrap;
+  }
+  #games {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1em;
+  }
+  .game { width: 192px; }
+  .board {
+    display: grid;
+    grid-template-columns: repeat(8, 24px);
+    grid-template-rows: repeat(8, 24px);
+    border: 1px solid #444;
+  }
+  .sq {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    line-height: 1;
+    user-select: none;
+  }
+  .light { background: #eed; }
+  .dark { background: #997; }
+  .caption {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 13px;
+    margin: 0.3em 0;
+  }
+</style>
+</head>
+<body>
+
+<h1>Parameter walk</h1>
+
+<p>A random walk over the search parameters. The parameters and their defaults are fetched with the
+<code>search</code> command. Each candidate changes one value of the current best by one step, a tenth of its
+default or at least 1, up or down, and plays a match against the current best on a clock, two workers per game so
+no hash is shared, random four ply openings, colours alternated, several games at once. If the candidate scores at
+least the accept percentage it becomes the best, and the walk goes on for ever. The best is kept in this browser
+so a reload carries on.</p>
+
+<p>This is not a tuner. At a few seconds a game the error bar on a 40 game match is about a hundred Elo, so most
+accepted changes are noise, and what wins at this speed may not win at a longer one. It is a toy that shows the
+shape of <a href="https://www.chessprogramming.org/Automated_Tuning">automated tuning</a>, of which
+<a href="https://www.chessprogramming.org/SPSA">SPSA</a> is the serious version, with none of the maths. Raising the
+games per candidate and the accept percentage makes it less of a toy.</p>
+
+<p id="controls">
+  <label>Games <input id="games-n" type="number" value="40" min="2" step="2" style="width:4em"></label>
+  <label>Accept <input id="accept" type="number" value="55" min="50" max="100" style="width:4em"> %</label>
+  <label>Clock <input id="clock" type="number" value="5" min="1" style="width:4em"> s</label>
+  <label>+ <input id="inc" type="number" value="0.05" min="0" step="0.05" style="width:4em"> s</label>
+  <label>At once <input id="parallel" type="number" value="8" min="1" max="32" style="width:4em"></label>
+  <button id="start">Start</button>
+  <button id="reset">Reset best</button>
+</p>
+
+<table id="params"></table>
+
+<p id="status"></p>
+<div id="bar"><div></div></div>
+
+<table id="accepted"></table>
+
+<p id="summary"></p>
+
+<pre id="best"></pre>
+
+<div id="games"></div>
+
+<script>
+const PIECES = {
+  K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙',
+  k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟',
+  '.': ''
+};
+const FILES = 'abcdefgh';
+const MAX_PLY = 300;
+const RANDOM_PLIES = 4;
+const STORE = 'naddu-walk-best';
+
+const paramsEl = document.getElementById('params');
+const status = document.getElementById('status');
+const bar = document.getElementById('bar').firstElementChild;
+const acceptedEl = document.getElementById('accepted');
+const summary = document.getElementById('summary');
+const bestEl = document.getElementById('best');
+const gamesEl = document.getElementById('games');
+
+let defaults = [];   // [{name, values}] from the engine
+let best = [];
+let cand = [];
+let change = null;   // [param index, value index] of the candidate's change
+let games = [];      // one per pair of workers
+let candidates = 0;
+let accepted = 0;
+let started = 0;     // games handed out for this candidate
+let finished = 0;
+let score = [0, 0, 0];  // candidate wins, draws, losses
+let running = false;
+
+function rand(n) {
+  return Math.floor(Math.random() * n);
+}
+
+function copy(p) {
+  const out = [];
+  for (let i = 0; i < p.length; i++)
+    out.push({name: p[i].name, values: p[i].values.slice()});
+  return out;
+}
+
+function lines(p) {
+  const out = [];
+  for (let i = 0; i < p.length; i++)
+    out.push('search ' + p[i].name + ' ' + p[i].values.join(' '));
+  return out;
+}
+
+function makeBoard(el) {
+  for (let rank = 8; rank >= 1; rank--) {
+    for (let file = 0; file < 8; file++) {
+      const sq = document.createElement('div');
+      sq.className = 'sq ' + ((rank + file) % 2 ? 'dark' : 'light');
+      el.appendChild(sq);
+    }
+  }
+}
+
+function show(el, rows) {
+  for (let r = 0; r < 8; r++)
+    for (let f = 0; f < 8; f++)
+      el.children[r * 8 + f].textContent = PIECES[rows[r][f]];
+}
+
+// elo from a score fraction with a rough 95% error bar
+function elo(p, n) {
+  if (p <= 0 || p >= 1 || n < 2)
+    return '';
+  const e = -400 * Math.log10(1 / p - 1);
+  const err = 1.96 * 173.7 / Math.sqrt(n * p * (1 - p));
+  return (e > 0 ? '+' : '') + Math.round(e) + ' +/- ' + Math.round(err) + ' elo';
+}
+
+function showParams() {
+  let html = '<tr><th>parameter</th><th>default</th><th>best</th><th>testing</th></tr>';
+  for (let i = 0; i < defaults.length; i++) {
+    const v = cand[i].values.slice();
+    if (change[0] === i)
+      v[change[1]] = '<mark>' + v[change[1]] + '</mark>';
+    html += '<tr' + (change[0] === i ? ' class="testing"' : '') + '><td>' + defaults[i].name + '</td><td>' + defaults[i].values.join(' ')
+      + '</td><td>' + best[i].values.join(' ') + '</td><td>' + v.join(' ') + '</td></tr>';
+  }
+  paramsEl.innerHTML = html;
+  bestEl.textContent = 'current best, paste into the console page or a script:\n\n' + lines(best).join('\n');
+}
+
+function showScore() {
+  const n = score[0] + score[1] + score[2];
+  const p = n ? (score[0] + score[1] / 2) / n : 0.5;
+  status.textContent = 'candidate ' + candidates + ': ' + (change ? cand[change[0]].name + ' ' + cand[change[0]].values.join(' ') : '')
+    + '\ngame ' + n + ' of ' + document.getElementById('games-n').value + ', +' + score[0] + ' =' + score[1] + ' -' + score[2]
+    + ', ' + Math.round(p * 100) + '%  ' + elo(p, n);
+  bar.style.width = Math.round(p * 100) + '%';
+}
+
+// a new candidate: one value of the best moved one step
+function nextCandidate() {
+  cand = copy(best);
+  while (true) {
+    const i = rand(cand.length);
+    const j = rand(cand[i].values.length);
+    const step = Math.max(1, Math.floor(Math.abs(defaults[i].values[j]) / 10));
+    const v = Math.max(0, cand[i].values[j] + (rand(2) ? step : -step));
+    if (v !== cand[i].values[j]) {
+      cand[i].values[j] = v;
+      change = [i, j];
+      break;
+    }
+  }
+  candidates++;
+  started = 0;
+  finished = 0;
+  score = [0, 0, 0];
+  showParams();
+  showScore();
+  for (let i = 0; i < games.length; i++)
+    newGame(games[i]);
+}
+
+function finishCandidate() {
+  const n = score[0] + score[1] + score[2];
+  const p = (score[0] + score[1] / 2) / n;
+  const ok = p * 100 >= parseInt(document.getElementById('accept').value);
+  if (ok) {
+    accepted++;
+    if (!acceptedEl.rows.length)
+      acceptedEl.innerHTML = '<tr><th>accepted</th><th>change</th><th>score</th><th></th></tr>';
+    acceptedEl.insertRow().innerHTML = '<td>' + candidates + '</td><td>' + cand[change[0]].name + ' ' + cand[change[0]].values.join(' ')
+      + '</td><td>+' + score[0] + ' =' + score[1] + ' -' + score[2] + '</td><td>' + elo(p, n) + '</td>';
+    best = cand;
+    try {
+      localStorage.setItem(STORE, JSON.stringify(best));
+    }
+    catch (e) {
+    }
+  }
+  summary.textContent = candidates + ' candidates, ' + accepted + ' accepted';
+  nextCandidate();
+}
+
+// the worker of the side to move
+function toMove(g) {
+  return (g.moves.length % 2 ? g.black : g.white) === 'cand' ? g.wc : g.wb;
+}
+
+function step(g) {
+  g.rows = [];
+  const w = toMove(g);
+  w.postMessage('position startpos moves ' + g.moves.join(' '));
+  w.postMessage('board');
+  w.postMessage('moves');
+}
+
+function newGame(g) {
+  if (started >= parseInt(document.getElementById('games-n').value)) {
+    g.caption.textContent = 'game ' + g.id + ': waiting';
+    g.moves = null;
+    return;
+  }
+  g.game = ++started;
+  g.white = g.game % 2 ? 'cand' : 'best';
+  g.black = g.game % 2 ? 'best' : 'cand';
+  g.moves = [];
+  g.keys = {};
+  g.hmc = 0;
+  const ms = Math.round(parseFloat(document.getElementById('clock').value) * 1000);
+  g.clock = [ms, ms];
+  const lc = lines(cand);
+  const lb = lines(best);
+  g.wc.postMessage('ucinewgame');
+  g.wb.postMessage('ucinewgame');
+  for (let i = 0; i < lc.length; i++) {
+    g.wc.postMessage(lc[i]);
+    g.wb.postMessage(lb[i]);
+  }
+  step(g);
+}
+
+// result from the candidate's view: 1, 0.5, 0
+function endGame(g, result, why) {
+  score[result === 1 ? 0 : result === 0.5 ? 1 : 2]++;
+  finished++;
+  g.caption.textContent = 'game ' + g.game + ': ' + why;
+  showScore();
+  if (finished >= parseInt(document.getElementById('games-n').value))
+    finishCandidate();
+  else
+    newGame(g);
+}
+
+function checkDraw(g) {
+  const key = g.rows.join('') + g.stm;
+  g.keys[key] = (g.keys[key] || 0) + 1;
+  if (g.keys[key] >= 3)
+    return 'repetition';
+  if (g.hmc >= 100)
+    return 'fifty moves';
+  if (g.moves.length >= MAX_PLY)
+    return 'ply cap';
+  let minors = 0;
+  for (let r = 0; r < 8; r++) {
+    for (let f = 0; f < 8; f++) {
+      const c = g.rows[r][f].toLowerCase();
+      if (c === 'p' || c === 'r' || c === 'q')
+        return '';
+      if (c === 'n' || c === 'b')
+        minors++;
+    }
+  }
+  return minors <= 1 ? 'bare kings' : '';
+}
+
+function onMessage(g, line) {
+  if (!g.moves || !running)
+    return;
+  const row = line.match(/^([1-8])  ((?:[rnbqkpRNBQKP.] ){8})$/);
+  if (row) {
+    g.rows[8 - parseInt(row[1])] = row[2].trim().split(' ');
+    if (row[1] === '1')
+      show(g.boardEl, g.rows);
+  }
+  else if (line.startsWith('stm: ')) {
+    g.stm = line.slice(5);
+  }
+  else if (line === 'checkmate') {
+    const winner = g.stm === 'white' ? g.black : g.white;
+    endGame(g, winner === 'cand' ? 1 : 0, 'mate, ' + winner + ' wins');
+  }
+  else if (line === 'stalemate') {
+    endGame(g, 0.5, 'stalemate');
+  }
+  else if (/^([a-h][1-8][a-h][1-8][qrbn]? ?)+$/.test(line)) {
+    const why = checkDraw(g);
+    if (why) {
+      endGame(g, 0.5, why);
+      return;
+    }
+    g.caption.textContent = 'game ' + g.game + ': ' + (g.white === 'cand' ? 'cand v best' : 'best v cand') + ' ply ' + g.moves.length;
+    const legal = line.split(' ');
+    if (g.moves.length < RANDOM_PLIES) {
+      onMessage(g, 'bestmove ' + legal[rand(legal.length)]);
+      return;
+    }
+    const inc = Math.round(parseFloat(document.getElementById('inc').value) * 1000);
+    g.t0 = performance.now();
+    toMove(g).postMessage('go wtime ' + g.clock[0] + ' btime ' + g.clock[1] + ' winc ' + inc + ' binc ' + inc);
+  }
+  else if (line.startsWith('bestmove ')) {
+    const move = line.split(' ')[1];
+    const side = g.stm === 'white' ? 0 : 1;
+    if (g.moves.length >= RANDOM_PLIES) {
+      const inc = Math.round(parseFloat(document.getElementById('inc').value) * 1000);
+      g.clock[side] = g.clock[side] - Math.round(performance.now() - g.t0) + inc;
+      if (g.clock[side] < 0) {
+        const loser = side ? g.black : g.white;
+        endGame(g, loser === 'cand' ? 0 : 1, loser + ' lost on time');
+        return;
+      }
+    }
+    const from = g.rows[8 - parseInt(move[1])][FILES.indexOf(move[0])];
+    const to = g.rows[8 - parseInt(move[3])][FILES.indexOf(move[2])];
+    g.hmc = from.toLowerCase() === 'p' || to !== '.' ? 0 : g.hmc + 1;
+    g.moves.push(move);
+    step(g);
+  }
+}
+
+function stop() {
+  running = false;
+  for (let i = 0; i < games.length; i++) {
+    games[i].wc.terminate();
+    games[i].wb.terminate();
+  }
+  games = [];
+  gamesEl.innerHTML = '';
+}
+
+function start() {
+  stop();
+  running = true;
+  acceptedEl.innerHTML = '';
+  summary.textContent = '';
+  candidates = 0;
+  accepted = 0;
+  const n = parseInt(document.getElementById('parallel').value);
+  for (let i = 0; i < n; i++) {
+    const el = document.createElement('div');
+    el.className = 'game';
+    const caption = document.createElement('div');
+    caption.className = 'caption';
+    const boardEl = document.createElement('div');
+    boardEl.className = 'board';
+    makeBoard(boardEl);
+    el.appendChild(caption);
+    el.appendChild(boardEl);
+    gamesEl.appendChild(el);
+    const g = {id: i + 1, caption: caption, boardEl: boardEl, rows: [], moves: null, wc: new Worker('../naddu.js'), wb: new Worker('../naddu.js')};
+    g.wc.onmessage = function(e) { onMessage(g, e.data); };
+    g.wb.onmessage = function(e) { onMessage(g, e.data); };
+    games.push(g);
+  }
+  nextCandidate();
+}
+
+function resetBest() {
+  try {
+    localStorage.removeItem(STORE);
+  }
+  catch (e) {
+  }
+  best = copy(defaults);
+  start();
+}
+
+// the parameters and defaults come from the engine, readyok says the list is complete
+const probe = new Worker('../naddu.js');
+probe.onmessage = function(e) {
+  const parts = e.data.split(' ');
+  if (parts[0] === 'search') {
+    const values = [];
+    for (let i = 2; i < parts.length; i++)
+      values.push(parseInt(parts[i]));
+    defaults.push({name: parts[1], values: values});
+    return;
+  }
+  if (parts[0] !== 'readyok')
+    return;
+  probe.terminate();
+  best = copy(defaults);
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE));
+    if (saved && saved.length === defaults.length)
+      best = saved;
+  }
+  catch (e) {
+  }
+  document.getElementById('start').onclick = start;
+  document.getElementById('reset').onclick = resetBest;
+  start();
+};
+probe.postMessage('search');
+probe.postMessage('isready');
+</script>
+
+</body>
+</html>
