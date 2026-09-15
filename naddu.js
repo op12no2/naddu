@@ -1731,6 +1731,80 @@ function pstCommand(tokens) {
   ttClear();  // scores in the hash were for the old eval
 }
 
+// eval verbose: the eval itemised from white's side, then the real eval as a check
+// walks the board again rather than slowing evaluate() down with bookkeeping
+function evalVerbose(node) {
+
+  const pos = node.pos;
+  const board = pos.board;
+  const mat = [[0, 0], [0, 0]];  // [colour][phase]
+  const pst = [[0, 0], [0, 0]];
+  const shel = [0, 0];
+  const mop = [0, 0];
+  let phase = 0;
+  let n = 0;
+
+  counts.fill(0);
+  for (let sq = 0; sq < 128; sq++) {
+    if (sq & 0x88 || !board[sq])
+      continue;
+    const piece = board[sq];
+    const type = piece & 7;
+    const c = piece >> 3;
+    counts[piece] += 1;
+    n++;
+    phase += PHASE[type];
+    for (let ph = 0; ph < 2; ph++) {
+      mat[c][ph] += MAT[c][ph][type];
+      pst[c][ph] += PST[c][ph][type][sq];
+    }
+  }
+
+  if (counts[QUEEN | BLACK])
+    shel[0] = -shelter(board, pos.kings[0], PAWN, 16);
+  if (counts[QUEEN])
+    shel[1] = -shelter(board, pos.kings[1], PAWN | BLACK, -16);
+
+  const draw = n === 2 || n === 3 && (counts[KNIGHT] || counts[BISHOP] || counts[KNIGHT | BLACK] || counts[BISHOP | BLACK]);
+
+  const egW = mat[0][1] + pst[0][1];
+  const egB = mat[1][1] + pst[1][1];
+  if (!draw && counts[PAWN] + counts[PAWN | BLACK] === 0 && Math.abs(egW - egB) >= MOPUP[2]) {
+    const wk = pos.kings[0];
+    const bk = pos.kings[1];
+    const lk = egW > egB ? bk : wk;
+    const centre = (Math.abs(2 * (lk & 7) - 7) + Math.abs(2 * (lk >> 4) - 7) - 2) >> 1;
+    const apart = Math.abs((wk & 7) - (bk & 7)) + Math.abs((wk >> 4) - (bk >> 4));
+    mop[egW > egB ? 0 : 1] = MOPUP[0] * centre + MOPUP[1] * (14 - apart);
+  }
+
+  function row(name, w0, w1, b0, b1, d0, d1) {
+    uciWrite(name.padEnd(9) + String(w0).padStart(9) + String(w1).padStart(9) + String(b0).padStart(9) + String(b1).padStart(9)
+      + String(d0 === undefined ? w0 - b0 : d0).padStart(9) + String(d1 === undefined ? w1 - b1 : d1).padStart(9));
+  }
+
+  row('term', 'white mg', 'white eg', 'black mg', 'black eg', 'mg', 'eg');
+  row('material', mat[0][0], mat[0][1], mat[1][0], mat[1][1]);
+  row('pst', pst[0][0], pst[0][1], pst[1][0], pst[1][1]);
+  row('shelter', shel[0], 0, shel[1], 0);
+  row('mopup', mop[0], mop[0], mop[1], mop[1]);
+  const tw0 = mat[0][0] + pst[0][0] + shel[0] + mop[0];
+  const tw1 = mat[0][1] + pst[0][1] + mop[0];
+  const tb0 = mat[1][0] + pst[1][0] + shel[1] + mop[1];
+  const tb1 = mat[1][1] + pst[1][1] + mop[1];
+  row('total', tw0, tw1, tb0, tb1);
+
+  if (phase > PHASE_TOTAL)
+    phase = PHASE_TOTAL;
+  uciWrite('phase ' + phase + ' of ' + PHASE_TOTAL);
+  const blend = Math.trunc(((tw0 - tb0) * phase + (tw1 - tb1) * (PHASE_TOTAL - phase)) / PHASE_TOTAL);
+  uciWrite('blend ' + blend + ' for white');
+  uciWrite('tempo ' + TEMPO[0] + ' for ' + (pos.stm ? 'black' : 'white') + ' to move');
+  if (draw)
+    uciWrite('draw by material');
+  uciWrite('eval ' + evaluate(node));
+}
+
 // the tunable eval features other than the tables: name => [live array, first index, defaults]
 // material is wmat and bmat with a phase, MAT[colour][phase] from PAWN to QUEEN
 const FEATURES = {
@@ -2593,7 +2667,10 @@ function execTokens(tokens) {
 
     case 'eval':
     case 'e':
-      uciWrite(evaluate(nodes[0]));
+      if (tokens.length > 1 && (tokens[1].toLowerCase() === 'verbose' || tokens[1].toLowerCase() === 'v'))
+        evalVerbose(nodes[0]);
+      else
+        uciWrite(evaluate(nodes[0]));
       break;
 
     case 'pst':
@@ -2641,6 +2718,7 @@ function execTokens(tokens) {
       uciWrite('board (b)                   show the current position');
       uciWrite('moves (l)                   list the legal moves, or checkmate/stalemate if there are none');
       uciWrite('eval (e)                    show the static eval of the current position');
+      uciWrite('eval (e) verbose (v)        show the eval itemised by term, from the white side');
       uciWrite('pst                         show the piece square tables, wn mg etc, a1 to h8');
       uciWrite('pst <piece> [mg|eg] [def|<sq>|<sq> <v>|<64 v>]  print, reset or set a table, see the readme');
       uciWrite('feature [<name> [def|<values>]]  print, reset or set the eval features, see the readme');

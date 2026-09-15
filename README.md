@@ -90,6 +90,7 @@ Extra commands handy for web pages and testing, with any shortform in parenthsis
 - `board` (`b`) - show the current position.
 - `moves` (`l`) - list the legal moves, or `checkmate` or `stalemate` if there are none.
 - `eval` (`e`) - static eval of the current position from the side to move's point of view.
+- `eval verbose` (`e v`) - the eval itemised by term, see below.
 - `pst` - print, set or reset the piece square tables, see below.
 - `feature` - print, set or reset the other eval numbers, tempo, phase weights and so on, see below.
 - `perft <depth>` (`f`) - leaf node count.
@@ -208,6 +209,26 @@ edge and the mating king towards it.
 its bishops at 400.
 
 `feature tempo def`, `feature mat mg def` and `feature def` reset one feature, one table of material or everything.
+
+## Eval breakdown
+
+`eval verbose` or `e v` shows where the eval comes from, handy after changing tables or features. Each term is given
+for white and black in the middlegame and endgame, then the difference from white's side, then the phase, the blend of
+the two differences at that phase, the tempo for the side to move and the eval itself, which is the blend from the
+side to move's view plus the tempo. A draw by material is reported and gives 0. For K+Q v K:-
+
+```
+term      white mg white eg black mg black eg       mg       eg
+material      1025      936        0        0     1025      936
+pst             -5      -96      -39       24       34     -120
+shelter          0        0      -48        0       48        0
+mopup           56       56        0        0       56       56
+total         1076      896      -87       24     1163      872
+phase 4 of 24
+blend 920 for white
+tempo 10 for white to move
+eval 930
+```
 
 ## Command line
 
