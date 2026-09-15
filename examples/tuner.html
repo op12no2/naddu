@@ -67,7 +67,10 @@
 <p>A gradient descent tuner for the eval, the piece square tables, material, tempo, shelter, smother and cuddle, all
 of them in both phases. It fits the eval to the results of 725,000 quiet positions from the Zurichess set, the
 standard <a href="https://www.chessprogramming.org/Texel%27s_Tuning_Method">Texel tuning</a> recipe: a sigmoid turns
-the eval into an expected result, the loss is the mean squared error against the actual result, and
+the eval into an expected result, <code>1 / (1 + 10^(-K * eval / 400))</code> with the eval in centipawns from
+white's side and the result 1, 0.5 or 0 for white, so it is the Elo formula with K stretching it to fit; K is found
+first by a golden section search on the engine's own values and shown in the status line. The loss is the mean
+squared error against the actual result, and
 <a href="https://www.chessprogramming.org/Automated_Tuning#Adam">Adam</a> steps the weights down the gradient each
 epoch. Every term is linear in its weights so the gradients are exact. The phase weights and mop up are not tuned,
 mop up is carried as a constant per position. Material and the tables are collinear, a piece count is the sum of
