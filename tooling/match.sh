@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# 2000 game match, dev naddu.js v releases/naddu.js, 10+0.1, using fastchess.
+# SPRT, dev naddu.js v releases/naddu.js, 10+0.1, using fastchess.
 # Run from anywhere, e.g. ./tooling/match.sh
 # Override with env vars, e.g. ROUNDS=10 ./tooling/match.sh for a quick smoke test,
-# or BASE=/path/to/engine ./tooling/match.sh to play against another uci engine.
+# ELO0=-5 ELO1=0 for a non regression test, or BASE=/path/to/engine to play another uci engine.
 
 set -e
 
@@ -14,7 +14,9 @@ if pgrep -f "tooling/fastchess -engine" > /dev/null; then
   exit 1
 fi
 
-rounds=${ROUNDS:-1000}          # 2 games per round with -repeat
+rounds=${ROUNDS:-10000}         # 2 games per round with -repeat, the sprt stops long before this
+elo0=${ELO0:-0}
+elo1=${ELO1:-5}
 concurrency=${CONCURRENCY:-16}
 tc=${TC:-10+0.1}
 timemargin=${TIMEMARGIN:-200}   # some engines overshoot the clock, raise this for a fair gauntlet
@@ -43,6 +45,7 @@ tooling/fastchess \
   -engine name=base cmd=$base \
   -each proto=uci tc=$tc timemargin=$timemargin \
   -rounds $rounds -repeat \
+  -sprt elo0=$elo0 elo1=$elo1 alpha=0.05 beta=0.1 model=normalized \
   -concurrency $concurrency \
   -openings file=$book format=epd order=random \
   -srand $RANDOM$RANDOM \

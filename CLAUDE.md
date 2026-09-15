@@ -35,14 +35,15 @@ Simplicity is just as important.
 
 ## match testing
 
-`./tooling/match.sh` is the acceptance test: 2000 games at 10+0.1, `naddu.js` v `releases/naddu.js`,
-via fastchess using bun binaries. One run, verdict is final, no reruns, no SPRT.
-Accept a patch if it is not clearly worse. Test per feature, never tune parameters.
-PGN is saved to `tooling/match.pgn` for style analysis. The tc was 1+0.1 until Sep 15 2026, the results
-in the todo notes below are from that; 10+0.1 is a more realistic tc and about 45 Elo stronger for Naddu.
+`./tooling/match.sh` is the acceptance test: an SPRT at 10+0.1, `naddu.js` v `releases/naddu.js`, via fastchess
+using bun binaries. Bounds elo0 0 elo1 5, alpha 0.05, beta 0.1 (a loser fails fast), normalized model, capped at
+20000 games. Accept on H1. Only ever test at this control, no longer ones. Test per feature. PGN is saved to
+`tooling/match.pgn`. The tc was 1+0.1 and fixed 2000 game matches until Sep 15 2026, the results in the todo notes
+are from that.
 
-- `./tooling/match.sh` full 2000 game match (~2 hours)
+- `./tooling/match.sh` the sprt
 - `ROUNDS=4 CONCURRENCY=8 ./tooling/match.sh` quick 8 game smoke test
+- `ELO0=-5 ELO1=0 ./tooling/match.sh` non regression bounds for a patch that buys something other than Elo
 - extra args are passed to fastchess
 - speed-only patches (bench node count unchanged) don't need a match, compare bench nps
 - `BASE=/path/to/engine ./tooling/match.sh` plays dev against any uci engine; `TIMEMARGIN=2500` for engines that overshoot the clock

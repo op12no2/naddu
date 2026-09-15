@@ -286,7 +286,7 @@ sake of having its own values. To tune again:-
 3. `node tooling/apply.js file` writes them into the defaults in `naddu.js`.
 4. If the tuner reported the eval scale moving, scale the search margins to match with the `search` command and
    apply those lines too.
-5. Play a match against the release, keep it if it is not clearly worse.
+5. `./tooling/match.sh`, an SPRT against the release at 10+0.1.
 
 The walk and inertia examples do the same for the search parameters and print lines the tool takes too.
 
