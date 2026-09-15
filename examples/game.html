@@ -57,7 +57,8 @@ with the time the <a href="https://www.chessprogramming.org/Time_Management">tim
 move as bars underneath. Behind it a pool of workers takes every position of the game and searches it to a fixed
 depth, plotting a second line, so the quick clock search and the deep search can be compared. Where the two lines
 part is where the game was decided, or where the quick search was wrong. Scores are clipped to ten pawns and a mate
-is drawn at the edge. Both sides use the same worker, which is fine since they are the same engine. Game end is
+is drawn at the edge. The first four plies are random so each game is different. Both sides use the same worker, which is fine
+since they are the same engine. Game end is
 checked by the page: checkmate, stalemate, threefold repetition, fifty moves, insufficient material or a 300 ply
 cap.</p>
 
@@ -88,6 +89,11 @@ const PIECES = {
 const FILES = 'abcdefgh';
 const MAX_PLY = 300;
 const CLIP = 1000;   // centipawns at the top and bottom of the chart
+const RANDOM_PLIES = 4;  // opening moves picked at random so each game differs
+
+function rand(n) {
+  return Math.floor(Math.random() * n);
+}
 const SVG = 'http://www.w3.org/2000/svg';
 
 const boardEl = document.getElementById('board');
@@ -268,7 +274,13 @@ function onPlayer(line) {
     const inc = Math.round(parseFloat(document.getElementById('inc').value) * 1000);
     status.textContent = 'ply ' + (moves.length + 1) + ', ' + stm + ' to move, clocks ' + (clock[0] / 1000).toFixed(1) + ' ' + (clock[1] / 1000).toFixed(1);
     t0 = performance.now();
-    player.postMessage('go wtime ' + clock[0] + ' btime ' + clock[1] + ' winc ' + inc + ' binc ' + inc);
+    if (moves.length < RANDOM_PLIES) {
+      const legal = line.split(' ');
+      lastScore = 0;
+      onPlayer('bestmove ' + legal[rand(legal.length)]);
+    }
+    else
+      player.postMessage('go wtime ' + clock[0] + ' btime ' + clock[1] + ' winc ' + inc + ' binc ' + inc);
   }
   else if (line.startsWith('info ')) {
     const s = parseScore(line);
