@@ -33,8 +33,8 @@
 <p>The 1500 positions of the <a href="https://www.chessprogramming.org/Strategic_Test_Suite">Strategic Test Suite</a>,
 15 themes of 100 positions, each searched for a fixed time. Every position has up to ten candidate moves
 scored 1 to 100, the best move scoring 100. The engine gets the score of the move it picks, or 0 if its move is
-not a candidate, so the maximum is 10000 per theme and 150000 overall. Each theme runs in its own worker, so the
-fifteen rows fill in together and the suite takes a hundred searches' worth of time, about 2 seconds at the
+not a candidate, so the maximum is 10000 per theme and 150000 overall. Each theme runs in its own worker which is
+handed its hundred positions up front, so the fifteen rows fill in together and the suite takes a hundred searches' worth of time, about 2 seconds at the
 default 10 ms and under two minutes at one second a position. With fewer than fifteen cores the workers share
 the CPU and each search gets less than it asked for. Positions where the engine's move is not a candidate at all
 are listed under the table.</p>
@@ -1589,11 +1589,15 @@ const rows = new Array(themes.length);    // table row per theme
 let done = 0;
 let total = 0;
 
-function run(theme) {
-  const test = tests[theme * 100 + index[theme]];
-  workers[theme].postMessage('ucinewgame');
-  workers[theme].postMessage('position fen ' + test[0]);
-  workers[theme].postMessage('go movetime ' + document.getElementById('movetime').value);
+// give a worker its whole theme up front, the searches run back to back and the
+// bestmoves come back in order
+function queue(theme) {
+  const movetime = document.getElementById('movetime').value;
+  for (let i = 0; i < 100; i++) {
+    workers[theme].postMessage('ucinewgame');
+    workers[theme].postMessage('position fen ' + tests[theme * 100 + i][0]);
+    workers[theme].postMessage('go movetime ' + movetime);
+  }
 }
 
 function showRow(theme) {
@@ -1627,9 +1631,7 @@ function onMessage(theme, line) {
   }
   showRow(theme);
   progress.textContent = done + ' of ' + tests.length + ', total ' + total;
-  if (index[theme] < 100)
-    run(theme);
-  else
+  if (index[theme] === 100)
     workers[theme].terminate();
   if (done === tests.length)
     summary.textContent = 'STS score ' + total + ' / ' + (tests.length * 100) + ' = ' + Math.round(total / tests.length * 10) / 10 + '%';
@@ -1651,7 +1653,7 @@ function start() {
     scores[theme] = 0;
     rows[theme] = results.insertRow();
     showRow(theme);
-    run(theme);
+    queue(theme);
   }
 }
 
