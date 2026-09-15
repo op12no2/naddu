@@ -33,9 +33,11 @@
 <p>The 1500 positions of the <a href="https://www.chessprogramming.org/Strategic_Test_Suite">Strategic Test Suite</a>,
 15 themes of 100 positions, each searched for a fixed time. Every position has up to ten candidate moves
 scored 1 to 100, the best move scoring 100. The engine gets the score of the move it picks, or 0 if its move is
-not a candidate, so the maximum is 10000 per theme and 150000 overall. The default 10 ms gives a quick look
-in about a minute, at one second a position the whole suite takes about 25 minutes. Positions where the
-engine's move is not a candidate at all are listed under the table.</p>
+not a candidate, so the maximum is 10000 per theme and 150000 overall. Each theme runs in its own worker, so the
+fifteen rows fill in together and the suite takes a hundred searches' worth of time, about 2 seconds at the
+default 10 ms and under two minutes at one second a position. With fewer than fifteen cores the workers share
+the CPU and each search gets less than it asked for. Positions where the engine's move is not a candidate at all
+are listed under the table.</p>
 
 <p>
   <label>Search time <input id="movetime" type="number" value="10" min="10" step="100" style="width:6em"> ms</label>
@@ -1574,79 +1576,83 @@ const tests = [
   ['1R6/2r2bkp/p2q1rp1/4Np2/2pPp2P/Q5P1/PP1R1P1K/8 w - -', 'a3e3=100 a3a4=86 a3a5=86 a3b4=86 a3c3=86 a3d6=86 b8b4=76 e5f7=20 g3g4=6 h2g2=1'],
 ];
 
-let naddu = null;
 const progress = document.getElementById('progress');
 const results = document.getElementById('results');
 const summary = document.getElementById('summary');
 const misses = document.getElementById('misses');
 
-let index = 0;
-let total = 0;
+// one worker per theme, each with its own position counter
+const workers = new Array(themes.length);
+const index = new Array(themes.length);   // positions done per theme
 const scores = new Array(themes.length);  // score per theme
 const rows = new Array(themes.length);    // table row per theme
+let done = 0;
+let total = 0;
 
-function run() {
-  naddu.postMessage('ucinewgame');
-  naddu.postMessage('position fen ' + tests[index][0]);
-  naddu.postMessage('go movetime ' + document.getElementById('movetime').value);
+function run(theme) {
+  const test = tests[theme * 100 + index[theme]];
+  workers[theme].postMessage('ucinewgame');
+  workers[theme].postMessage('position fen ' + test[0]);
+  workers[theme].postMessage('go movetime ' + document.getElementById('movetime').value);
 }
 
 function showRow(theme) {
-  const done = Math.min(100, index - theme * 100);
-  rows[theme].innerHTML = '<td>' + themes[theme] + '</td><td>' + done + '</td><td>' + scores[theme]
-    + '</td><td>' + (done ? Math.round(scores[theme] / done) : '') + '%</td>';
+  const n = index[theme];
+  rows[theme].innerHTML = '<td>' + themes[theme] + '</td><td>' + n + '</td><td>' + scores[theme]
+    + '</td><td>' + (n ? Math.round(scores[theme] / n) : '') + '%</td>';
 }
 
-function onMessage(e) {
-  const line = e.data;
+function onMessage(theme, line) {
   if (!line.startsWith('bestmove '))
     return;
   const move = line.split(' ')[1];
-  const theme = Math.floor(index / 100);
+  const test = tests[theme * 100 + index[theme]];
   // look the move up in the candidates, 0 if not there
   let score = 0;
-  const pairs = tests[index][1].split(' ');
+  const pairs = test[1].split(' ');
   for (let i = 0; i < pairs.length; i++) {
     if (pairs[i].startsWith(move + '='))
       score = parseInt(pairs[i].substr(move.length + 1));
   }
   scores[theme] += score;
   total += score;
+  index[theme]++;
+  done++;
   // not a candidate at all, list it
   if (!score) {
     if (!misses.rows.length)
       misses.innerHTML = '<tr><th>miss</th><th>fen</th><th>best</th><th>got</th></tr>';
-    misses.insertRow().innerHTML = '<td>' + themes[theme] + ' ' + (index - theme * 100 + 1) + '</td><td>' + tests[index][0]
+    misses.insertRow().innerHTML = '<td>' + themes[theme] + ' ' + index[theme] + '</td><td>' + test[0]
       + '</td><td>' + pairs[0].split('=')[0] + '</td><td>' + move + '</td>';
   }
-  index++;
   showRow(theme);
-  progress.textContent = index + ' of ' + tests.length + ': ' + themes[theme] + ' ' + (index - theme * 100)
-    + ' ' + move + ' = ' + score + ', total ' + total;
-  if (index < tests.length)
-    run();
+  progress.textContent = done + ' of ' + tests.length + ', total ' + total;
+  if (index[theme] < 100)
+    run(theme);
   else
+    workers[theme].terminate();
+  if (done === tests.length)
     summary.textContent = 'STS score ' + total + ' / ' + (tests.length * 100) + ' = ' + Math.round(total / tests.length * 10) / 10 + '%';
 }
 
 function start() {
-  if (naddu)
-    naddu.terminate();
-  naddu = new Worker('../naddu.js');
-  naddu.onmessage = onMessage;
   results.innerHTML = '<tr><th>theme</th><th>positions</th><th>score</th><th>percent</th></tr>';
-  for (let i = 0; i < themes.length; i++) {
-    scores[i] = 0;
-    rows[i] = results.insertRow();
-  }
   summary.textContent = '';
   progress.textContent = '';
   misses.innerHTML = '';
-  index = 0;
+  done = 0;
   total = 0;
-  for (let i = 0; i < themes.length; i++)
-    showRow(i);
-  run();
+  for (let theme = 0; theme < themes.length; theme++) {
+    if (workers[theme])
+      workers[theme].terminate();
+    workers[theme] = new Worker('../naddu.js');
+    workers[theme].onmessage = function(e) { onMessage(theme, e.data); };
+    index[theme] = 0;
+    scores[theme] = 0;
+    rows[theme] = results.insertRow();
+    showRow(theme);
+    run(theme);
+  }
 }
 
 document.getElementById('start').onclick = start;
