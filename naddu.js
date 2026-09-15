@@ -1815,11 +1815,37 @@ const FEATURES = {
 };
 const DEF_MAT = [[82, 337, 365, 477, 1025], [94, 281, 297, 512, 936]];
 
-function printFeature(name, arr, first, n) {
-  let line = 'feature ' + name;
+// print "<cmd> <name> <values>" for one entry of a feature or search list
+function printNumbers(cmd, name, arr, first, n) {
+  let line = cmd + ' ' + name;
   for (let i = 0; i < n; i++)
     line += ' ' + arr[first + i];
   uciWrite(line);
+}
+
+// set every [name, array, first, defaults] in list from rest, the values or def, checking first
+function setNumbers(cmd, list, rest) {
+  const values = rest.length === 1 && rest[0] === 'def' ? null : rest;
+  for (let j = 0; j < list.length; j++) {
+    if (values && values.length !== list[j][3].length) {
+      uciWrite('info string ' + cmd + ': ' + list[j][0] + ' takes ' + list[j][3].length + ' values');
+      return false;
+    }
+  }
+  for (let k = 0; values && k < values.length; k++) {
+    if (!/^-?\d+$/.test(values[k])) {
+      uciWrite('info string ' + cmd + ': bad value ' + values[k]);
+      return false;
+    }
+  }
+  for (let j = 0; j < list.length; j++) {
+    const arr = list[j][1];
+    const first = list[j][2];
+    const def = list[j][3];
+    for (let k = 0; k < def.length; k++)
+      arr[first + k] = values ? parseInt(values[k]) : def[k];
+  }
+  return true;
 }
 
 // feature                         print all
@@ -1858,34 +1884,62 @@ function featureCommand(tokens) {
   const rest = t.slice(i);
   if (rest.length === 0) {
     for (let j = 0; j < list.length; j++)
-      printFeature(list[j][0], list[j][1], list[j][2], list[j][3].length);
+      printNumbers('feature', list[j][0], list[j][1], list[j][2], list[j][3].length);
     return;
   }
-  // check everything before writing anything
-  const values = rest.length === 1 && rest[0] === 'def' ? null : rest;
-  for (let j = 0; j < list.length; j++) {
-    if (values && values.length !== list[j][3].length) {
-      uciWrite('info string feature: ' + list[j][0] + ' takes ' + list[j][3].length + ' values');
-      return;
-    }
-  }
-  for (let k = 0; values && k < values.length; k++) {
-    if (!/^-?\d+$/.test(values[k])) {
-      uciWrite('info string feature: bad value ' + values[k]);
-      return;
-    }
-  }
-  for (let j = 0; j < list.length; j++) {
-    const arr = list[j][1];
-    const first = list[j][2];
-    const def = list[j][3];
-    for (let k = 0; k < def.length; k++)
-      arr[first + k] = values ? parseInt(values[k]) : def[k];
-  }
+  if (!setNumbers('feature', list, rest))
+    return;
   phaseTotal();
   for (let piece = PAWN; piece <= KING; piece++)
     evalInit(piece);
   ttClear();  // scores in the hash were for the old eval
+}
+
+// search parameters, edited with the search command
+const RFP = new Int16Array([8, 100]);            // reverse futility: max depth, margin per depth
+const NULLMOVE = new Int16Array([2, 2, 4]);      // null move: min depth, reduction, plus depth divided by
+const FUTILITY = new Int16Array([3, 100]);       // futility: max depth, margin per depth
+const LMR = new Int16Array([3, 3, 1, 12, 2]);    // late move reduction: min depth, after n moves reduce by, after n moves reduce by
+const ASPIRATION = new Int16Array([4, 30, 500]); // aspiration window: from depth, width, doubled until, then wide open
+const TIME = new Int16Array([30, 50, 300, 50, 50]); // clock: moves to go if not given, soft and hard limits as % of the
+                                                     // allocation, hard limit cap as % of time left, % of increment used
+const SEARCHES = {
+  rfp:        [RFP, 0, [8, 100]],
+  nullmove:   [NULLMOVE, 0, [2, 2, 4]],
+  futility:   [FUTILITY, 0, [3, 100]],
+  lmr:        [LMR, 0, [3, 3, 1, 12, 2]],
+  aspiration: [ASPIRATION, 0, [4, 30, 500]],
+  time:       [TIME, 0, [30, 50, 300, 50, 50]]
+};
+
+// search                          print all
+// search def                      reset all
+// search <name> [def|<values>]    print, reset or set one, values all given at once
+function searchCommand(tokens) {
+  const t = [];
+  for (let i = 1; i < tokens.length; i++)
+    t.push(tokens[i].toLowerCase());
+  const list = [];
+  let i = 0;
+  if (t.length === 0 || t.length === 1 && t[0] === 'def') {
+    for (const name in SEARCHES)
+      list.push([name, SEARCHES[name][0], SEARCHES[name][1], SEARCHES[name][2]]);
+  }
+  else if (SEARCHES[t[0]]) {
+    list.push([t[0], SEARCHES[t[0]][0], SEARCHES[t[0]][1], SEARCHES[t[0]][2]]);
+    i = 1;
+  }
+  else {
+    uciWrite('info string search: unknown parameter ' + t[0]);
+    return;
+  }
+  const rest = t.slice(i);
+  if (rest.length === 0) {
+    for (let j = 0; j < list.length; j++)
+      printNumbers('search', list[j][0], list[j][1], list[j][2], list[j][3].length);
+    return;
+  }
+  setNumbers('search', list, rest);
 }
 
 class TimeControl {
@@ -1939,7 +1993,7 @@ function tcInit(tokens) {
   let btime = 0;
   let winc = 0;
   let binc = 0;
-  let movestogo = 30; // Default to 30 moves if not specified
+  let movestogo = TIME[0]; // if not given
   let movetime = tokens.length === 1 ? 100 : 0; // bare go = quick search
   let infinite = false;
 
@@ -1961,7 +2015,7 @@ function tcInit(tokens) {
         binc = parseInt(tokens[++i]) || 0;
         break;
       case 'movestogo':
-        movestogo = Math.max(2,parseInt(tokens[++i]) || 30);
+        movestogo = Math.max(2, parseInt(tokens[++i]) || TIME[0]);
         break;
       case 'depth':
       case 'd':
@@ -1994,11 +2048,11 @@ function tcInit(tokens) {
     const timeLeft = isWhite ? wtime : btime;
     const increment = isWhite ? winc : binc;
 
-    // Time allocation: timeLeft / movestogo + increment / 2
-    // The soft limit stops new iterations, the hard limit aborts the search
-    const allocatedTime = (timeLeft / movestogo) + (increment / 2);
-    tc.softTime = tc.startTime + allocatedTime / 2;
-    tc.finishTime = tc.startTime + Math.min(allocatedTime * 3, timeLeft / 2);
+    // Time allocation: timeLeft / movestogo + a share of the increment
+    // The soft limit stops new iterations, the hard limit aborts the search, see TIME
+    const allocatedTime = (timeLeft / movestogo) + (increment * TIME[4] / 100);
+    tc.softTime = tc.startTime + allocatedTime * TIME[1] / 100;
+    tc.finishTime = tc.startTime + Math.min(allocatedTime * TIME[2] / 100, timeLeft * TIME[3] / 100);
   }
 
   // Set default max depth if not specified
@@ -2147,17 +2201,17 @@ function search(depth, ply, alpha, beta) {
     return 0;
 
   // beta pruning aka reverse futility pruning https://www.chessprogramming.org/Reverse_Futility_Pruning
-  if (!isPV && !inCheck && depth <=  8 && beta < TT_MATE_BOUND && (ev - depth * 100) >= beta)
+  if (!isPV && !inCheck && depth <= RFP[0] && beta < TT_MATE_BOUND && (ev - depth * RFP[1]) >= beta)
     return ev;
 
   // null move pruning https://www.chessprogramming.org/Null_Move_Pruning
   // counts[] is still valid from evaluate() above
-  if (!isPV && !inCheck && !node.noNull && depth >= 2 && ev >= beta && beta < TT_MATE_BOUND
+  if (!isPV && !inCheck && !node.noNull && depth >= NULLMOVE[0] && ev >= beta && beta < TT_MATE_BOUND
       && (counts[KNIGHT | pos.stm] + counts[BISHOP | pos.stm] + counts[ROOK | pos.stm] + counts[QUEEN | pos.stm]) > 0) {
     posSet(nextPos, pos);
     makeNull(nextPos);
     nextNode.noNull = 1;
-    const score = -search(depth - 1 - 2 - (depth >> 2), ply + 1, -beta, -beta + 1);
+    const score = -search(depth - 1 - NULLMOVE[1] - ((depth / NULLMOVE[2]) | 0), ply + 1, -beta, -beta + 1);
     nextNode.noNull = 0;
     if (tc.finished)
       return 0;
@@ -2186,8 +2240,8 @@ function search(depth, ply, alpha, beta) {
 
     // futility pruning - at low depth skip quiet moves when the static eval is well below alpha
     // https://www.chessprogramming.org/Futility_Pruning
-    if (!isPV && !inCheck && depth <= 3 && numMoves > 1 && Math.abs(alpha) < TT_MATE_BOUND
-        && !(move & (MOVE_FLAG_CAPTURE | MOVE_PROMO_MASK)) && ev + 100 * depth <= alpha)
+    if (!isPV && !inCheck && depth <= FUTILITY[0] && numMoves > 1 && Math.abs(alpha) < TT_MATE_BOUND
+        && !(move & (MOVE_FLAG_CAPTURE | MOVE_PROMO_MASK)) && ev + FUTILITY[1] * depth <= alpha)
       continue;
 
     let score;
@@ -2199,8 +2253,8 @@ function search(depth, ply, alpha, beta) {
       // late move reductions https://www.chessprogramming.org/Late_Move_Reductions
       // late quiet non-killer moves get a reduced null window search first
       let r = 0;
-      if (depth >= 3 && numMoves > 3 && !inCheck && move !== node.killer && !(move & (MOVE_FLAG_CAPTURE | MOVE_PROMO_MASK)))
-        r = numMoves > 12 ? 2 : 1;
+      if (depth >= LMR[0] && numMoves > LMR[1] && !inCheck && move !== node.killer && !(move & (MOVE_FLAG_CAPTURE | MOVE_PROMO_MASK)))
+        r = numMoves > LMR[3] ? LMR[4] : LMR[2];
       score = -search(depth - 1 - r, ply + 1, -alpha - 1, -alpha);
       if (r && tc.finished === 0 && score > alpha) {
         score = -search(depth - 1, ply + 1, -alpha - 1, -alpha);
@@ -2286,16 +2340,16 @@ function go() {
   for (let d = 1; d <= tc.maxDepth; d++) {
     const bm = tc.bestMove;
     // aspiration window around the previous score, widened on failure https://www.chessprogramming.org/Aspiration_Windows
-    let delta = 30;
-    let alpha = d >= 4 ? score - delta : -Infinity;
-    let beta  = d >= 4 ? score + delta :  Infinity;
+    let delta = ASPIRATION[1];
+    let alpha = d >= ASPIRATION[0] ? score - delta : -Infinity;
+    let beta  = d >= ASPIRATION[0] ? score + delta :  Infinity;
     while (true) {
       score = search(d, 0, alpha, beta);
       if (tc.finished || (score > alpha && score < beta))
         break;
       delta *= 2;
-      alpha = delta > 500 ? -Infinity : score - delta;
-      beta  = delta > 500 ?  Infinity : score + delta;
+      alpha = delta > ASPIRATION[2] ? -Infinity : score - delta;
+      beta  = delta > ASPIRATION[2] ?  Infinity : score + delta;
     }
     if (tc.finished) {
       if (bm)
@@ -2681,6 +2735,10 @@ function execTokens(tokens) {
       featureCommand(tokens);
       break;
 
+    case 'search':
+      searchCommand(tokens);
+      break;
+
     case 'perfttests':
     case 'pt':
       perftTests();
@@ -2722,6 +2780,7 @@ function execTokens(tokens) {
       uciWrite('pst                         show the piece square tables, wn mg etc, a1 to h8');
       uciWrite('pst <piece> [mg|eg] [def|<sq>|<sq> <v>|<64 v>]  print, reset or set a table, see the readme');
       uciWrite('feature [<name> [def|<values>]]  print, reset or set the eval features, see the readme');
+      uciWrite('search [<name> [def|<values>]]   print, reset or set the search parameters, see the readme');
       uciWrite('perft (f) <depth>           count leaf nodes to the given depth');
       uciWrite('bench (h)                   search 50 positions and report nodes and nps');
       uciWrite('evaltests (et)              show the eval of the bench positions');

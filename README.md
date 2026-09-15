@@ -93,6 +93,7 @@ Extra commands handy for web pages and testing, with any shortform in parenthsis
 - `eval verbose` (`e v`) - the eval itemised by term, see below.
 - `pst` - print, set or reset the piece square tables, see below.
 - `feature` - print, set or reset the other eval numbers, tempo, phase weights and so on, see below.
+- `search` - print, set or reset the search parameters, pruning, reductions, windows and the clock, see below.
 - `perft <depth>` (`f`) - leaf node count.
 - `bench` (`h`) - search 50 positions, report nodes and nps.
 - `evaltests` (`et`) - evals of the bench positions.
@@ -209,6 +210,54 @@ edge and the mating king towards it.
 its bishops at 400.
 
 `feature tempo def`, `feature mat mg def` and `feature def` reset one feature, one table of material or everything.
+
+## Search
+
+The `search` command prints, sets and resets the search parameters the same way as `feature`. Values are given all at
+once. The hash is not cleared.
+
+```
+search
+search def
+search <name>
+search <name> def
+search <name> <v1> ... <vn>
+```
+
+- `rfp <depth> <margin>` - reverse futility pruning up to this depth, margin per depth.
+- `nullmove <depth> <r> <div>` - null move from this depth, reduction r plus depth divided by div.
+- `futility <depth> <margin>` - futility pruning up to this depth, margin per depth.
+- `lmr <depth> <n1> <r1> <n2> <r2>` - late move reduction from this depth, r1 after n1 moves, r2 after n2.
+- `aspiration <depth> <width> <max>` - aspiration window from this depth, doubled on a fail until max, then wide open.
+- `time <mtg> <soft> <hard> <cap> <inc>` - clock, moves to go if the GUI gives none, then percentages.
+
+### Examples
+
+`search` prints everything, one line each, in the form the set command takes. `search lmr` prints one.
+
+`search rfp 8 100` are the defaults. In a non PV node not in check at depth 8 or less, if the static eval less 100 per
+ply of depth is still at least beta the node is cut. `search rfp 0 100` turns it off, `search rfp 8 150` prunes less.
+
+`search nullmove 2 2 4` are the defaults. From depth 2, when the static eval is at least beta and the side to move has
+a piece, a null move is tried at depth reduced by 2 plus a quarter of the depth. `search nullmove 99 2 4` turns it off.
+
+`search futility 3 100` are the defaults. In a non PV node not in check at depth 3 or less, quiet moves after the
+first are skipped when the static eval plus 100 per ply of depth cannot reach alpha.
+
+`search lmr 3 3 1 12 2` are the defaults. From depth 3, quiet moves that are not the killer are searched one ply
+shallower after the third move and two plies shallower after the twelfth, re-searched at full depth if they beat
+alpha. `search lmr 3 3 1 99 1` never reduces by two, `search lmr 99 3 1 12 2` turns reductions off.
+
+`search aspiration 4 30 500` are the defaults. From depth 4 each iteration starts with a window 30 either side of the
+last score, doubling it on a fail high or low until it passes 500, when the window is opened fully.
+
+`search time 30 50 300 50 50` are the defaults. With a clock and no moves to go the engine plans for 30 more moves,
+allocating time left over that plus half the increment. It starts no new iteration after 50% of that allocation and
+stops dead at 300% of it, or at 50% of the time left if that is less. `search time 30 80 300 50 100` thinks longer per
+move and uses the whole increment.
+
+`search lmr def` and `search def` reset one parameter or everything. Changing these changes the node count, so run
+`bench` to see the effect and a match to see if it was worth it.
 
 ## Eval breakdown
 
