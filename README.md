@@ -47,6 +47,7 @@ Try this example here: https://op12no2.github.io/naddu/examples/hello_world.html
 - [pst](https://op12no2.github.io/naddu/examples/pst.html) - the piece square tables as heat maps on one shared colour scale.
 - [taper](https://op12no2.github.io/naddu/examples/taper.html) - one board per piece with a phase slider, showing the blended values the eval really uses.
 - [parallel](https://op12no2.github.io/naddu/examples/parallel.html) - workers share out the root moves of one position and search them together.
+- [arena](https://op12no2.github.io/naddu/examples/arena.html) - a round robin between the five strength levels, twenty workers, live crosstable.
 
 ## Command line
 

@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arena</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 70em;
+    margin: 2em auto;
+    padding: 0 1em;
+  }
+  #controls label { margin-right: 1em; }
+  #table {
+    border-collapse: collapse;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 14px;
+    margin: 1em 0;
+  }
+  #table td, #table th {
+    border: 1px solid #ddd;
+    padding: 0.3em 0.6em;
+    text-align: center;
+    min-width: 5em;
+  }
+  #table th:first-child { text-align: left; }
+  #games {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1em;
+  }
+  .game { width: 192px; }
+  .board {
+    display: grid;
+    grid-template-columns: repeat(8, 24px);
+    grid-template-rows: repeat(8, 24px);
+    border: 1px solid #444;
+  }
+  .sq {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    line-height: 1;
+    user-select: none;
+  }
+  .light { background: #eed; }
+  .dark { background: #997; }
+  .caption {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 13px;
+    margin: 0.3em 0;
+    white-space: pre-wrap;
+  }
+  #summary { font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>Arena</h1>
+
+<p>A <a href="https://www.chessprogramming.org/Round-robin_Tournament">round robin</a> between the five strength levels
+of the <a href="play.html">play</a> page: one ply, 500 nodes, 5000 nodes, 50000 nodes and a fixed time per move. Each
+of the ten pairings gets two workers, one per side, so all ten games run at once and the crosstable fills in live.
+Two workers rather than one because with a shared hash table the weak side would play with the strong side's deep
+analysis. Colours alternate between games. Every game opens with four random legal plies, otherwise the engine would repeat the
+same game each time. Cells show the row level's wins, draws and losses against the column level, coloured by
+score. Games end by checkmate, stalemate, threefold repetition, the fifty move rule, insufficient material or a 300 ply
+cap, all checked by the page from the board the engine prints. A level should not lose its mini match to the level
+below it, and the summary counts how many do not.</p>
+
+<p id="controls">
+  <label>Games per pairing <input id="games-n" type="number" value="4" min="2" step="2" style="width:5em"></label>
+  <label>Level 5 movetime <input id="movetime" type="number" value="50" min="10" step="10" style="width:5em"> ms</label>
+  <button id="start">Start</button>
+</p>
+
+<table id="table"></table>
+
+<p id="summary"></p>
+
+<div id="games"></div>
+
+<script>
+const PIECES = {
+  K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙',
+  k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟',
+  '.': ''
+};
+const FILES = 'abcdefgh';
+const LEVELS = ['depth 1', 'nodes 500', 'nodes 5000', 'nodes 50000', 'movetime'];
+const MAX_PLY = 300;
+const RANDOM_PLIES = 4;  // opening moves picked at random so the games differ
+
+// seeded so a run is repeatable
+let seed = 12345;
+
+function rand(n) {
+  seed ^= seed << 13;
+  seed ^= seed >>> 17;
+  seed ^= seed << 5;
+  return (seed >>> 0) % n;
+}
+
+const table = document.getElementById('table');
+const summary = document.getElementById('summary');
+const games = document.getElementById('games');
+
+let pairings = [];  // one per worker
+const score = [];   // score[a][b] = [wins, draws, losses] of level a v level b
+
+function makeBoard(el) {
+  for (let rank = 8; rank >= 1; rank--) {
+    for (let file = 0; file < 8; file++) {
+      const sq = document.createElement('div');
+      sq.className = 'sq ' + ((rank + file) % 2 ? 'dark' : 'light');
+      el.appendChild(sq);
+    }
+  }
+}
+
+function show(el, rows) {
+  for (let r = 0; r < 8; r++)
+    for (let f = 0; f < 8; f++)
+      el.children[r * 8 + f].textContent = PIECES[rows[r][f]];
+}
+
+function go(level) {
+  return level === 'movetime' ? 'movetime ' + document.getElementById('movetime').value : level;
+}
+
+// crosstable cell colour from the score fraction, red 0 to green 1
+function colour(frac) {
+  return 'hsl(' + Math.round(frac * 120) + ', 60%, 85%)';
+}
+
+function showTable() {
+  let html = '<tr><th>level</th>';
+  for (let b = 0; b < 5; b++)
+    html += '<th>v ' + (b + 1) + '</th>';
+  html += '<th>total</th></tr>';
+  for (let a = 0; a < 5; a++) {
+    html += '<tr><th>' + (a + 1) + ' ' + LEVELS[a] + '</th>';
+    let w = 0;
+    let d = 0;
+    let l = 0;
+    for (let b = 0; b < 5; b++) {
+      if (a === b) {
+        html += '<td></td>';
+        continue;
+      }
+      const s = score[a][b];
+      const n = s[0] + s[1] + s[2];
+      w += s[0];
+      d += s[1];
+      l += s[2];
+      html += '<td style="background:' + (n ? colour((s[0] + s[1] / 2) / n) : '#fff') + '">+' + s[0] + ' =' + s[1] + ' -' + s[2] + '</td>';
+    }
+    const n = w + d + l;
+    html += '<td style="background:' + (n ? colour((w + d / 2) / n) : '#fff') + '">' + (w + d / 2) + ' / ' + n + '</td></tr>';
+  }
+  table.innerHTML = html;
+}
+
+// a level passes if it did not lose its mini match to the level below
+function finish() {
+  let passed = 0;
+  for (let a = 1; a < 5; a++) {
+    const s = score[a][a - 1];
+    if (s[0] >= s[2])
+      passed++;
+  }
+  summary.textContent = passed + ' of 4 levels held their own against the level below';
+}
+
+// the worker of the side to move, white when an even number of moves have been played
+function toMove(p) {
+  return (p.moves.length % 2 ? p.black : p.white) === p.a ? p.wa : p.wb;
+}
+
+// give the side to move the moves so far, ask what is legal (checkmate/stalemate if nothing)
+function step(p) {
+  p.rows = [];
+  const w = toMove(p);
+  w.postMessage('position startpos moves ' + p.moves.join(' '));
+  w.postMessage('board');
+  w.postMessage('moves');
+}
+
+function newGame(p) {
+  p.game++;
+  if (p.game > parseInt(document.getElementById('games-n').value)) {
+    p.caption.textContent = (p.a + 1) + ' v ' + (p.b + 1) + ': done';
+    p.wa.terminate();
+    p.wb.terminate();
+    if (pairings.every(function(x) { return x.game > parseInt(document.getElementById('games-n').value); }))
+      finish();
+    return;
+  }
+  // alternate colours, white is a on odd games
+  p.white = p.game % 2 ? p.a : p.b;
+  p.black = p.game % 2 ? p.b : p.a;
+  p.moves = [];
+  p.keys = {};
+  p.hmc = 0;
+  p.wa.postMessage('ucinewgame');
+  p.wb.postMessage('ucinewgame');
+  step(p);
+}
+
+// result from white's view: 1, 0.5, 0
+function endGame(p, result, why) {
+  const a = p.white === p.a ? result : 1 - result;
+  score[p.a][p.b][a === 1 ? 0 : a === 0.5 ? 1 : 2]++;
+  score[p.b][p.a][a === 1 ? 2 : a === 0.5 ? 1 : 0]++;
+  showTable();
+  p.caption.textContent = (p.a + 1) + ' v ' + (p.b + 1) + ' game ' + p.game + ': ' + why;
+  newGame(p);
+}
+
+// page side draw rules from the board rows and the side to move
+function checkDraw(p) {
+  const key = p.rows.join('') + p.stm;
+  p.keys[key] = (p.keys[key] || 0) + 1;
+  if (p.keys[key] >= 3)
+    return 'threefold repetition';
+  if (p.hmc >= 100)
+    return 'fifty move rule';
+  if (p.moves.length >= MAX_PLY)
+    return 'ply cap';
+  let minors = 0;
+  for (let r = 0; r < 8; r++) {
+    for (let f = 0; f < 8; f++) {
+      const c = p.rows[r][f].toLowerCase();
+      if (c === 'p' || c === 'r' || c === 'q')
+        return '';
+      if (c === 'n' || c === 'b')
+        minors++;
+    }
+  }
+  return minors <= 1 ? 'insufficient material' : '';
+}
+
+function onMessage(p, line) {
+  const row = line.match(/^([1-8])  ((?:[rnbqkpRNBQKP.] ){8})$/);
+  if (row) {
+    p.rows[8 - parseInt(row[1])] = row[2].trim().split(' ');
+    if (row[1] === '1')
+      show(p.boardEl, p.rows);
+  }
+  else if (line.startsWith('stm: ')) {
+    p.stm = line.slice(5);
+  }
+  else if (line === 'checkmate') {
+    endGame(p, p.stm === 'white' ? 0 : 1, 'checkmate, ' + (p.stm === 'white' ? 'black' : 'white') + ' (level '
+      + ((p.stm === 'white' ? p.black : p.white) + 1) + ') wins');
+  }
+  else if (line === 'stalemate') {
+    endGame(p, 0.5, 'stalemate');
+  }
+  else if (/^([a-h][1-8][a-h][1-8][qrbn]? ?)+$/.test(line)) {
+    const why = checkDraw(p);
+    if (why) {
+      endGame(p, 0.5, why);
+      return;
+    }
+    p.caption.textContent = (p.a + 1) + ' v ' + (p.b + 1) + ' game ' + p.game + ': ply ' + p.moves.length;
+    if (p.moves.length < RANDOM_PLIES) {
+      const legal = line.split(' ');
+      onMessage(p, 'bestmove ' + legal[rand(legal.length)]);
+    }
+    else
+      toMove(p).postMessage('go ' + go(LEVELS[p.stm === 'white' ? p.white : p.black]));
+  }
+  else if (line.startsWith('bestmove ')) {
+    const move = line.split(' ')[1];
+    // halfmove clock: reset on a pawn move or a capture, else count
+    const from = p.rows[8 - parseInt(move[1])][FILES.indexOf(move[0])];
+    const to = p.rows[8 - parseInt(move[3])][FILES.indexOf(move[2])];
+    p.hmc = from.toLowerCase() === 'p' || to !== '.' ? 0 : p.hmc + 1;
+    p.moves.push(move);
+    step(p);
+  }
+}
+
+function start() {
+  for (let i = 0; i < pairings.length; i++) {
+    pairings[i].wa.terminate();
+    pairings[i].wb.terminate();
+  }
+  pairings = [];
+  games.innerHTML = '';
+  summary.textContent = '';
+  for (let a = 0; a < 5; a++) {
+    score[a] = [];
+    for (let b = 0; b < 5; b++)
+      score[a][b] = [0, 0, 0];
+  }
+  showTable();
+  for (let a = 0; a < 5; a++) {
+    for (let b = a + 1; b < 5; b++) {
+      const el = document.createElement('div');
+      el.className = 'game';
+      const caption = document.createElement('div');
+      caption.className = 'caption';
+      const boardEl = document.createElement('div');
+      boardEl.className = 'board';
+      makeBoard(boardEl);
+      el.appendChild(caption);
+      el.appendChild(boardEl);
+      games.appendChild(el);
+      const p = {a: a, b: b, game: 0, caption: caption, boardEl: boardEl, rows: [], moves: [],
+                 wa: new Worker('../naddu.js'), wb: new Worker('../naddu.js')};
+      p.wa.onmessage = function(e) { onMessage(p, e.data); };
+      p.wb.onmessage = function(e) { onMessage(p, e.data); };
+      pairings.push(p);
+      newGame(p);
+    }
+  }
+}
+
+document.getElementById('start').onclick = start;
+
+start();
+</script>
+
+</body>
+</html>
