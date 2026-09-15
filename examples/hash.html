@@ -49,6 +49,8 @@ checks the keys the way a hash table cares about them:</p>
 
 <p id="progress"></p>
 
+<table id="live"></table>
+
 <table id="results"></table>
 
 <p id="summary"></p>
@@ -60,6 +62,8 @@ const MAX_PLY = 120;
 const SLOTS = 1024;  // buckets from the low bits for the spread test
 
 const progress = document.getElementById('progress');
+const live = document.getElementById('live');
+const workers = [];
 const results = document.getElementById('results');
 const summary = document.getElementById('summary');
 
@@ -101,8 +105,8 @@ function onMessage(w, line) {
     }
     w.count++;
     total++;
-    if ((total & 1023) === 0)
-      progress.textContent = total + ' positions, ' + los.length + ' distinct';
+    if ((total & 255) === 0)
+      showLive();
     if (w.count >= PER_WORKER) {
       w.worker.terminate();
       if (++finished === WORKERS)
@@ -122,6 +126,21 @@ function onMessage(w, line) {
       w.moves.push(legal[rand(legal.length)]);
     play(w);
   }
+}
+
+// what has been gathered so far, and whether a linear relation between the halves still holds
+function showLive() {
+  let html = '';
+  for (let i = 0; i < workers.length; i++)
+    html += '<tr><td>worker ' + (i + 1) + '</td><td>' + workers[i].count + ' of ' + PER_WORKER + '</td></tr>';
+  const n = los.length;
+  const a = n >= 40 ? linear(los.slice(0, Math.min(n, 4096)), his.slice(0, Math.min(n, 4096))) : null;
+  html += '<tr><td>distinct</td><td>' + n + '</td></tr>'
+    + '<tr><td>collisions</td><td class="' + (collisions.length ? 'fail' : 'pass') + '">' + collisions.length + '</td></tr>'
+    + '<tr><td>hi linear in lo</td><td class="' + (a === null ? '' : a.linear ? 'fail' : 'pass') + '">'
+    + (a === null ? 'waiting' : a.linear ? 'holds so far, the key is 32 bits in effect' : 'no, broken by position ' + a.at) + '</td></tr>';
+  live.innerHTML = html;
+  progress.textContent = total + ' positions';
 }
 
 // is y a linear function of x over GF(2)? fit y = M x from the first samples by elimination, then check the rest
@@ -222,8 +241,10 @@ function report() {
 for (let i = 0; i < WORKERS; i++) {
   const w = {worker: new Worker('../naddu.js'), moves: [], count: 0};
   w.worker.onmessage = function(e) { onMessage(w, e.data); };
+  workers.push(w);
   play(w);
 }
+showLive();
 </script>
 
 </body>
