@@ -76,7 +76,8 @@ parameters and their defaults are fetched with the <code>search</code> or <code>
 page follows the engine. Each candidate changes one value of the current best by one step, a tenth of its default
 or at least 1, up or down, and plays a match against the current best on a clock, two workers per game so
 no hash is shared, random four ply openings, colours alternated, several games at once. If the candidate scores at
-least the accept percentage it becomes the best, and the walk goes on for ever. The best is kept in this browser
+least the accept percentage it becomes the best, and the walk goes on for ever. Untick a parameter to leave it
+alone, so the walk can be pointed at just the ones you are curious about. The best is kept in this browser
 so a reload carries on.</p>
 
 <p>This is not a tuner. The error bar on a 64 game match is about eighty five Elo, so most accepted changes are noise,
@@ -138,7 +139,8 @@ const summary = document.getElementById('summary');
 const bestEl = document.getElementById('best');
 const gamesEl = document.getElementById('games');
 
-let defaults = [];   // [{name, values}] from the engine
+let defaults = [];   // [{cmd, name, values}] from the engine
+let enabled = {};    // name => true if the walk may change it, the checkboxes
 let best = [];
 let cand = [];
 let change = null;   // [param index, value index] of the candidate's change
@@ -195,7 +197,7 @@ function elo(p, n) {
 }
 
 function showParams() {
-  let html = '<tr><th>parameter</th><th>default</th><th>best</th><th>testing</th></tr>';
+  let html = '<tr><th></th><th>parameter</th><th>default</th><th>best</th><th>testing</th></tr>';
   for (let i = 0; i < defaults.length; i++) {
     // mark the best values that have moved from the default, and the value under test
     const b = best[i].values.slice();
@@ -205,10 +207,14 @@ function showParams() {
     const v = cand[i].values.slice();
     if (change[0] === i)
       v[change[1]] = '<mark>' + v[change[1]] + '</mark>';
-    html += '<tr' + (change[0] === i ? ' class="testing"' : '') + '><td>' + defaults[i].name + '</td><td>' + defaults[i].values.join(' ')
+    html += '<tr' + (change[0] === i ? ' class="testing"' : '') + '><td><input type="checkbox" data-i="' + i + '"'
+      + (enabled[defaults[i].name] ? ' checked' : '') + '></td><td>' + defaults[i].name + '</td><td>' + defaults[i].values.join(' ')
       + '</td><td>' + b.join(' ') + '</td><td>' + v.join(' ') + '</td></tr>';
   }
   paramsEl.innerHTML = html;
+  const boxes = paramsEl.querySelectorAll('input');
+  for (let i = 0; i < boxes.length; i++)
+    boxes[i].onchange = function() { enabled[defaults[this.dataset.i].name] = this.checked; };
   bestEl.textContent = 'current best, paste into the console page or a script:\n\n' + lines(best).join('\n');
 }
 
@@ -221,11 +227,22 @@ function showScore() {
   bar.style.width = Math.round(p * 100) + '%';
 }
 
-// a new candidate: one value of the best moved one step
+// a new candidate: one value of the best moved one step, from the ticked parameters only
 function nextCandidate() {
   cand = copy(best);
+  const pick = [];
+  for (let i = 0; i < cand.length; i++)
+    if (enabled[cand[i].name])
+      pick.push(i);
+  if (pick.length === 0) {
+    change = [-1, -1];
+    showParams();
+    status.textContent = 'tick at least one parameter';
+    running = false;
+    return;
+  }
   while (true) {
-    const i = rand(cand.length);
+    const i = pick[rand(pick.length)];
     const j = rand(cand[i].values.length);
     const step = Math.max(1, Math.floor(Math.abs(defaults[i].values[j]) / 10));
     const v = Math.max(0, cand[i].values[j] + (rand(2) ? step : -step));
@@ -466,6 +483,9 @@ function load() {
     if (parts[0] !== 'readyok')
       return;
     probe.terminate();
+    enabled = {};
+    for (let i = 0; i < defaults.length; i++)
+      enabled[defaults[i].name] = true;
     best = copy(defaults);
     try {
       const saved = JSON.parse(localStorage.getItem(STORE + modeEl.value));
