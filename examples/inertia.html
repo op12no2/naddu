@@ -63,6 +63,8 @@ with the sts page through <code>sts.js</code>.</p>
 
 <script src="sts.js"></script>
 <script>
+// the lists that may go negative, the rest are clamped at zero
+const SIGNED = {smother: 1, cuddle: 1, tempo: 1};
 const PROBES = {
   search: ['search'],
   eval: ['feature tempo', 'feature phase', 'feature shelter', 'feature mopup', 'feature smother mg', 'feature smother eg',
@@ -210,7 +212,9 @@ function start() {
         const p = [];
         for (let k = 0; k < defaults.length; k++)
           p.push({cmd: defaults[k].cmd, name: defaults[k].name, values: defaults[k].values.slice()});
-        p[i].values[j] = Math.max(0, p[i].values[j] + sign * step);
+        p[i].values[j] += sign * step;
+        if (!SIGNED[defaults[i].name.split(' ')[0]])
+          p[i].values[j] = Math.max(0, p[i].values[j]);
         runs.push({lines: lines(p), row: row, side: sign < 0 ? 'minus' : 'plus'});
       }
     }

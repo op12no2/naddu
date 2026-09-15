@@ -87,7 +87,9 @@ epoch whatever its gradient, then the steps shrink as a weight's gradient settle
 fast and a low rate finishes neatly; 4 from zero, 1 or less from the engine's values. The result is printed as <code>pst</code> and <code>feature</code> lines to paste into the
 console page or a script, or to save to a file for <code>node tooling/apply.js</code>, which writes them into the
 defaults in <code>naddu.js</code> so a match can test them. Being fitted to results they still have to earn their
-place that way.</p>
+place that way. When training ends K is refitted to the result, and the ratio of the two is how much the eval's
+scale has moved: the search margins are in centipawns of the old scale, so scale them the same way, with the
+<code>search</code> command, before a match.</p>
 
 <p id="controls">
   <label>Positions <input id="count" type="number" value="725000" min="1000" step="1000" style="width:7em"></label>
@@ -567,30 +569,30 @@ function makeMaps() {
   }
 }
 
-async function lossAt(k) {
-  const r = await ask({cmd: 'loss', W: engine, K: k});
+async function lossAt(k, w) {
+  const r = await ask({cmd: 'loss', W: w, K: k});
   let loss = 0;
   for (let i = 0; i < r.length; i++)
     loss += r[i].loss;
   return loss / total;
 }
 
-// fit the sigmoid scale to the engine's values by golden section search
-async function fitK() {
+// fit the sigmoid scale to a set of weights by golden section search
+async function fitK(w) {
   let a = 0.3, b = 4;
   const g = (Math.sqrt(5) - 1) / 2;
   let c = b - g * (b - a), d = a + g * (b - a);
-  let fc = await lossAt(c), fd = await lossAt(d);
+  let fc = await lossAt(c, w), fd = await lossAt(d, w);
   for (let i = 0; i < 20; i++) {
     if (fc < fd) {
       b = d; d = c; fd = fc;
       c = b - g * (b - a);
-      fc = await lossAt(c);
+      fc = await lossAt(c, w);
     }
     else {
       a = c; c = d; fc = fd;
       d = a + g * (b - a);
-      fd = await lossAt(d);
+      fd = await lossAt(d, w);
     }
   }
   return (a + b) / 2;
@@ -644,8 +646,8 @@ async function load(text) {
   }
   summary.textContent = ok + ' of ' + fens.length + ' positions eval the same as the engine' + (bad.length ? '\n' + bad.join('\n') : '');
   status.textContent = 'fitting K';
-  K = await fitK();
-  status.textContent = total + ' positions, K ' + K.toFixed(3) + ', loss ' + (await lossAt(K)).toFixed(5) + ' at the engine values, press Start';
+  K = await fitK(engine);
+  status.textContent = total + ' positions, K ' + K.toFixed(3) + ', loss ' + (await lossAt(K, engine)).toFixed(5) + ' at the engine values, press Start';
   W = engine.slice();
   losses = [];
   draw();
@@ -721,7 +723,10 @@ async function train() {
   running = false;
   startBtn.disabled = false;
   stopBtn.disabled = true;
-  status.textContent += running ? '' : ', done';
+  // refit K to the result: the ratio says how the eval's scale has moved, which the search margins care about
+  const K2 = await fitK(W);
+  status.textContent += ', done. K refit ' + K2.toFixed(3) + ', the eval scale is x' + (K / K2).toFixed(2)
+    + ' the engine\'s, scale the search margins (rfp, futility, aspiration, mopup lead) the same way before a match';
 }
 
 startBtn.onclick = train;

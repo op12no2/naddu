@@ -122,6 +122,8 @@ const PIECES = {
 const FILES = 'abcdefgh';
 const MAX_PLY = 300;
 const RANDOM_PLIES = 4;
+// the lists that may go negative, the rest are clamped at zero
+const SIGNED = {smother: 1, cuddle: 1, tempo: 1};
 const STORE = 'naddu-walk-best-';  // plus the mode
 // what each walk asks the engine for, the replies are the parameter lists
 const PROBES = {
@@ -245,7 +247,9 @@ function nextCandidate() {
     const i = pick[rand(pick.length)];
     const j = rand(cand[i].values.length);
     const step = Math.max(1, Math.floor(Math.abs(defaults[i].values[j]) / 10));
-    const v = Math.max(0, cand[i].values[j] + (rand(2) ? step : -step));
+    let v = cand[i].values[j] + (rand(2) ? step : -step);
+    if (!SIGNED[cand[i].name.split(' ')[0]])
+      v = Math.max(0, v);
     if (v !== cand[i].values[j]) {
       cand[i].values[j] = v;
       change = [i, j];
