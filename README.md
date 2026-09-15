@@ -52,6 +52,7 @@ Try this example here: https://op12no2.github.io/naddu/examples/hello_world.html
 - [game](https://op12no2.github.io/naddu/examples/game.html) - the engine plays itself on a clock with a live score graph, time bars and a deeper second opinion from a worker pool.
 - [scaling](https://op12no2.github.io/naddu/examples/scaling.html) - root moves shared out between 1 to 16 workers, speedup plotted against the ideal.
 - [deepening](https://op12no2.github.io/naddu/examples/deepening.html) - nodes per iteration and the branching factor charted live for five positions side by side.
+- [symmetry](https://op12no2.github.io/naddu/examples/symmetry.html) - eight workers play random games and check every position evals the same when colour flipped.
 
 ## Command line
 
