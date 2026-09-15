@@ -140,9 +140,10 @@ function build() {
 }
 
 naddu.onmessage = function(e) {
-  const parts = e.data.split(' ');  // pst <piece> <mg|eg> <64 values a1..h8>
-  if (parts[0] !== 'pst')
+  const parts = e.data.split(' ');  // pst <wn|bn|...> <mg|eg> <64 values a1..h8>, white tables only here
+  if (parts[0] !== 'pst' || parts[1][0] !== 'w')
     return;
+  parts[1] = parts[1][1];
   const values = [];
   for (let i = 3; i < parts.length; i++)
     values.push(parseInt(parts[i]));

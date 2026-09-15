@@ -42,8 +42,9 @@
 
 <p>Naddu's <a href="https://www.chessprogramming.org/Piece-Square_Tables">piece square tables</a> (the
 <a href="https://www.chessprogramming.org/PeSTO%27s_Evaluation_Function">PeSTO</a> values) as heat maps, from white's side
-with rank 8 at the top. The tables are fetched from the engine with the <code>pst</code> command, so if you edit them in
-<code>naddu.js</code> this page follows. Middlegame (mg) and endgame (eg) values are blended by the
+with rank 8 at the top. The tables are fetched from the engine with the <code>pst</code> command, which can also change them, so
+if you edit them in <code>naddu.js</code> or with the command this page follows. Black's tables are white's
+flipped unless set separately, so only white's are shown. Middlegame (mg) and endgame (eg) values are blended by the
 <a href="https://www.chessprogramming.org/Tapered_Eval">tapered eval</a> as pieces come off. One colour scale is shared by
 all twelve tables, red is good for the piece and blue is bad, so the tables can be compared with each other.</p>
 
@@ -94,9 +95,10 @@ function draw() {
 }
 
 naddu.onmessage = function(e) {
-  const parts = e.data.split(' ');  // pst <piece> <mg|eg> <64 values a1..h8>
-  if (parts[0] !== 'pst')
+  const parts = e.data.split(' ');  // pst <wn|bn|...> <mg|eg> <64 values a1..h8>, white tables only here
+  if (parts[0] !== 'pst' || parts[1][0] !== 'w')
     return;
+  parts[1] = parts[1][1];
   const values = [];
   for (let i = 3; i < parts.length; i++)
     values.push(parseInt(parts[i]));

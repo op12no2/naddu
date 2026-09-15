@@ -90,7 +90,7 @@ Extra commands handy for web pages and testing, with any shortform in parenthsis
 - `board` (`b`) - show the current position.
 - `moves` (`l`) - list the legal moves, or `checkmate` or `stalemate` if there are none.
 - `eval` (`e`) - static eval of the current position from the side to move's point of view.
-- `pst` - the piece square tables, a1 to h8 from the white side, one line per piece and phase.
+- `pst` - print, set or reset the piece square tables, see below.
 - `perft <depth>` (`f`) - leaf node count.
 - `bench` (`h`) - search 50 positions, report nodes and nps.
 - `evaltests` (`et`) - evals of the bench positions.
@@ -120,6 +120,20 @@ q
 ```
 
 `go` on its own searches for 100 ms.
+
+## Piece square tables
+
+The `pst` command prints, sets and resets the piece square tables, so a page or a script can restyle the engine
+without editing it. Pieces are `p n b r q k`, which means both colours with black mirrored, or `wn`, `bq` etc for one
+colour. Squares are absolute, `e4` is e4 for either colour. Values are in centipawns a1 to h8, mg is middlegame and eg
+endgame. Not case sensitive. Any change clears the hash.
+
+- `pst` - print all 24 tables, one line each, e.g. `pst wn mg <64 values>`.
+- `pst n` or `pst wn mg` - print some of them.
+- `pst n mg e4 25` - set one square, white e4 and black e5.
+- `pst bn mg e4 25` - set one square for black only.
+- `pst n mg <64 values>` - set a table, a printed line can be pasted back.
+- `pst n mg def`, `pst n def`, `pst def` - reset a table, a piece or everything to the PeSTO values.
 
 ## Command line
 
