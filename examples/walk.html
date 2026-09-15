@@ -184,11 +184,16 @@ function elo(p, n) {
 function showParams() {
   let html = '<tr><th>parameter</th><th>default</th><th>best</th><th>testing</th></tr>';
   for (let i = 0; i < defaults.length; i++) {
+    // mark the best values that have moved from the default, and the value under test
+    const b = best[i].values.slice();
+    for (let j = 0; j < b.length; j++)
+      if (b[j] !== defaults[i].values[j])
+        b[j] = '<mark>' + b[j] + '</mark>';
     const v = cand[i].values.slice();
     if (change[0] === i)
       v[change[1]] = '<mark>' + v[change[1]] + '</mark>';
     html += '<tr' + (change[0] === i ? ' class="testing"' : '') + '><td>' + defaults[i].name + '</td><td>' + defaults[i].values.join(' ')
-      + '</td><td>' + best[i].values.join(' ') + '</td><td>' + v.join(' ') + '</td></tr>';
+      + '</td><td>' + b.join(' ') + '</td><td>' + v.join(' ') + '</td></tr>';
   }
   paramsEl.innerHTML = html;
   bestEl.textContent = 'current best, paste into the console page or a script:\n\n' + lines(best).join('\n');
