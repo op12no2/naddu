@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tapered piece square tables</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 70em;
+    margin: 2em auto;
+    padding: 0 1em;
+  }
+  #controls {
+    display: flex;
+    align-items: center;
+    gap: 1em;
+    margin-bottom: 1.5em;
+  }
+  #phase { width: 20em; }
+  #results {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5em;
+  }
+  table {
+    border-collapse: collapse;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+  caption {
+    text-align: left;
+    font-family: system-ui, sans-serif;
+    font-size: 14px;
+    padding-bottom: 0.3em;
+  }
+  td {
+    width: 2.4em;
+    height: 2.4em;
+    text-align: center;
+    border: 1px solid #ddd;
+  }
+  #summary { font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>Tapered piece square tables</h1>
+
+<p>One heat map per piece showing the <a href="https://www.chessprogramming.org/Piece-Square_Tables">piece square
+table</a> values Naddu actually uses at a given game phase. The
+<a href="https://www.chessprogramming.org/Tapered_Eval">tapered eval</a> blends the middlegame (mg) and endgame (eg)
+tables with <code>(mg * phase + eg * (24 - phase)) / 24</code>, where the phase counts the pieces on the board for both
+sides: knights and bishops 1 each, rooks 2, queens 4. So 24 is the start position (pure mg), 0 is kings and pawns only
+(pure eg) and, say, a rook ending is 4. Drag the slider to watch the blend. The tables are fetched from the engine with
+the <code>pst</code> command, so if you edit them in <code>naddu.js</code> this page follows. Boards are from white's side
+with rank 8 at the top, red is good for the piece and blue is bad, on one colour scale shared by all six boards and fixed
+across all phases.</p>
+
+<div id="controls">
+  <label for="phase">Phase</label>
+  <input id="phase" type="range" min="0" max="24" value="24">
+  <span id="label"></span>
+</div>
+
+<div id="results"></div>
+
+<p id="summary"></p>
+
+<script>
+const naddu = new Worker('../naddu.js');
+const results = document.getElementById('results');
+const summary = document.getElementById('summary');
+const slider = document.getElementById('phase');
+const label = document.getElementById('label');
+
+const names = {p: 'Pawn', n: 'Knight', b: 'Bishop', r: 'Rook', q: 'Queen', k: 'King'};
+const order = 'pnbrqk';
+const mg = {};     // piece letter => 64 values a1..h8
+const eg = {};
+const cells = {};  // piece letter => 64 td elements a1..h8
+let received = 0;
+let max = 1;       // colour scale, from the mg and eg extremes so it is fixed across phases
+
+// one colour scale across all the boards, white at 0, red positive, blue negative
+function colour(v) {
+  const l = 100 - Math.round(Math.abs(v) / max * 50);
+  return 'hsl(' + (v < 0 ? 220 : 0) + ', 80%, ' + l + '%)';
+}
+
+// the engine's blend, truncated towards zero as in evaluate
+function taper(m, e, phase) {
+  return Math.trunc((m * phase + e * (24 - phase)) / 24);
+}
+
+function describe(phase) {
+  if (phase === 24)
+    return 'middlegame, all pieces on';
+  if (phase === 0)
+    return 'endgame, kings and pawns only';
+  return 'some pieces gone';
+}
+
+function update() {
+  const phase = parseInt(slider.value);
+  label.textContent = phase + ' - ' + describe(phase);
+  for (let i = 0; i < order.length; i++) {
+    const p = order[i];
+    for (let sq = 0; sq < 64; sq++) {
+      const v = taper(mg[p][sq], eg[p][sq], phase);
+      cells[p][sq].textContent = v;
+      cells[p][sq].style.background = colour(v);
+    }
+  }
+}
+
+function build() {
+  for (let i = 0; i < order.length; i++) {
+    const p = order[i];
+    for (let sq = 0; sq < 64; sq++)
+      max = Math.max(max, Math.abs(mg[p][sq]), Math.abs(eg[p][sq]));
+  }
+  for (let i = 0; i < order.length; i++) {
+    const p = order[i];
+    cells[p] = [];
+    const table = document.createElement('table');
+    table.innerHTML = '<caption>' + names[p] + '</caption>';
+    for (let rank = 7; rank >= 0; rank--) {
+      const row = table.insertRow();
+      for (let file = 0; file < 8; file++)
+        cells[p][rank * 8 + file] = row.insertCell();
+    }
+    results.appendChild(table);
+  }
+  slider.oninput = update;
+  update();
+  summary.textContent = '6 of 6 boards, colour scale to ' + max;
+}
+
+naddu.onmessage = function(e) {
+  const parts = e.data.split(' ');  // pst <piece> <mg|eg> <64 values a1..h8>
+  if (parts[0] !== 'pst')
+    return;
+  const values = [];
+  for (let i = 3; i < parts.length; i++)
+    values.push(parseInt(parts[i]));
+  (parts[2] === 'mg' ? mg : eg)[parts[1]] = values;
+  if (++received === 12)
+    build();
+};
+
+naddu.postMessage('pst');
+</script>
+
+</body>
+</html>
