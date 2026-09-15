@@ -158,6 +158,12 @@ naddu.onmessage = function(e) {
 };
 
 naddu.postMessage('pst');
+
+// an old naddu.js without the material lines, e.g. cached by the browser, would leave the page blank
+setTimeout(function() {
+  if (received < 14)
+    summary.textContent = 'FAIL only ' + received + ' of 14 pst lines received, the engine may be cached, try a hard reload';
+}, 3000);
 </script>
 
 </body>
