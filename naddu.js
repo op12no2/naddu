@@ -1310,7 +1310,13 @@ function doMove(uciMove) {
   }
 }
 
+// phase weights by piece, 24 in total at the start with the defaults, see the feature command
 const PHASE = new Int16Array([0, 0, 1, 1, 2, 4, 0]);
+let PHASE_TOTAL = 24;
+
+function phaseTotal() {
+  PHASE_TOTAL = Math.max(1, 4 * (PHASE[KNIGHT] + PHASE[BISHOP] + PHASE[ROOK]) + 2 * PHASE[QUEEN]);
+}
 
 const MGW = Array(7);
 const MGB = Array(7);
@@ -1342,7 +1348,10 @@ function shelter(board, king, pawn, dir) {
 }
 
 // bonus for the side to move https://www.chessprogramming.org/Tempo
-const TEMPO = 10;
+const TEMPO = new Int16Array([10]);
+
+// mop up in pawnless endings: per step of the losing king from the centre, per step the kings are close, the lead needed
+const MOPUP = new Int16Array([10, 8, 200]);
 
 //
 // evaluate() uses PESTO values https://chessprogramming.org/PeSTO%27s_Evaluation_Function
@@ -1415,13 +1424,13 @@ function evaluate(node) {
 
   // mop-up: with no pawns the side well ahead pushes the other king to the edge and brings its king up
   // https://www.chessprogramming.org/Mop-up_Evaluation
-  if (counts[PAWN] + counts[PAWN | BLACK] === 0 && Math.abs(egW - egB) >= 200) {
+  if (counts[PAWN] + counts[PAWN | BLACK] === 0 && Math.abs(egW - egB) >= MOPUP[2]) {
     const wk = pos.kings[0];
     const bk = pos.kings[1];
     const lk = egW > egB ? bk : wk;
     const centre = (Math.abs(2 * (lk & 7) - 7) + Math.abs(2 * (lk >> 4) - 7) - 2) >> 1; // 0 centre to 6 corner
     const apart = Math.abs((wk & 7) - (bk & 7)) + Math.abs((wk >> 4) - (bk >> 4));     // manhattan 2 to 14
-    const bonus = 10 * centre + 8 * (14 - apart);
+    const bonus = MOPUP[0] * centre + MOPUP[1] * (14 - apart);
     if (egW > egB) {
       mgW += bonus;
       egW += bonus;
@@ -1435,16 +1444,17 @@ function evaluate(node) {
   const mgScore = pos.stm ? mgB - mgW : mgW - mgB;
   const egScore = pos.stm ? egB - egW : egW - egB;
 
-  if (phase > 24)
-    phase = 24;
+  if (phase > PHASE_TOTAL)
+    phase = PHASE_TOTAL;
 
-  const e = Math.trunc((mgScore * phase + egScore * (24 - phase)) / 24);
+  const e = Math.trunc((mgScore * phase + egScore * (PHASE_TOTAL - phase)) / PHASE_TOTAL);
 
-  return e + TEMPO;
+  return e + TEMPO[0];
 }
 
-const MAT_MG = new Int16Array([0, 82, 337, 365, 477, 1025, 0]);
-const MAT_EG = new Int16Array([0, 94, 281, 297, 512,  936, 0]);
+// material by piece, MAT[colour index][phase 0 mg 1 eg], per colour so a style can be asymmetric
+const MAT = [[new Int16Array([0, 82, 337, 365, 477, 1025, 0]), new Int16Array([0, 94, 281, 297, 512, 936, 0])],
+             [new Int16Array([0, 82, 337, 365, 477, 1025, 0]), new Int16Array([0, 94, 281, 297, 512, 936, 0])]];
 
 
 const PAWN_MG = new Int16Array([
@@ -1602,10 +1612,10 @@ function evalInit(piece) {
   for (let sq = 0; sq < 128; sq++) {
     if (sq & 0x88)
       continue;
-    MGW[piece][sq] = MAT_MG[piece] + PST[0][0][piece][sq];
-    MGB[piece][sq] = MAT_MG[piece] + PST[1][0][piece][sq];
-    EGW[piece][sq] = MAT_EG[piece] + PST[0][1][piece][sq];
-    EGB[piece][sq] = MAT_EG[piece] + PST[1][1][piece][sq];
+    MGW[piece][sq] = MAT[0][0][piece] + PST[0][0][piece][sq];
+    MGB[piece][sq] = MAT[1][0][piece] + PST[1][0][piece][sq];
+    EGW[piece][sq] = MAT[0][1][piece] + PST[0][1][piece][sq];
+    EGB[piece][sq] = MAT[1][1][piece] + PST[1][1][piece][sq];
   }
 }
 
@@ -1718,6 +1728,89 @@ function pstCommand(tokens) {
   }
   for (let a = 0; a < pieces.length; a++)
     evalInit(pieces[a]);
+  ttClear();  // scores in the hash were for the old eval
+}
+
+// the tunable eval features other than the tables: name => [live array, first index, defaults]
+// material is wmat and bmat with a phase, MAT[colour][phase] from PAWN to QUEEN
+const FEATURES = {
+  tempo:   [TEMPO, 0, [10]],
+  phase:   [PHASE, KNIGHT, [1, 1, 2, 4]],
+  shelter: [SHELTER, 0, [0, 4, 8, 12]],
+  mopup:   [MOPUP, 0, [10, 8, 200]]
+};
+const DEF_MAT = [[82, 337, 365, 477, 1025], [94, 281, 297, 512, 936]];
+
+function printFeature(name, arr, first, n) {
+  let line = 'feature ' + name;
+  for (let i = 0; i < n; i++)
+    line += ' ' + arr[first + i];
+  uciWrite(line);
+}
+
+// feature                         print all
+// feature def                     reset all
+// feature <name> [def|<values>]   print, reset or set one, <name> is tempo phase shelter mopup or
+//   mat wmat bmat followed by mg or eg, mat being both colours; values are all given at once
+function featureCommand(tokens) {
+  const t = [];
+  for (let i = 1; i < tokens.length; i++)
+    t.push(tokens[i].toLowerCase());
+  // build the list of [name, array, first, defaults] to act on
+  const list = [];
+  let i = 0;
+  if (t.length === 0 || t.length === 1 && t[0] === 'def') {
+    for (const name in FEATURES)
+      list.push([name, FEATURES[name][0], FEATURES[name][1], FEATURES[name][2]]);
+    for (let c = 0; c < 2; c++)
+      for (let ph = 0; ph < 2; ph++)
+        list.push([(c ? 'bmat' : 'wmat') + (ph ? ' eg' : ' mg'), MAT[c][ph], PAWN, DEF_MAT[ph]]);
+  }
+  else if (FEATURES[t[0]]) {
+    list.push([t[0], FEATURES[t[0]][0], FEATURES[t[0]][1], FEATURES[t[0]][2]]);
+    i = 1;
+  }
+  else if ((t[0] === 'mat' || t[0] === 'wmat' || t[0] === 'bmat') && (t[1] === 'mg' || t[1] === 'eg')) {
+    const ph = t[1] === 'eg' ? 1 : 0;
+    for (let c = 0; c < 2; c++)
+      if (t[0] === 'mat' || t[0][0] === (c ? 'b' : 'w'))
+        list.push([(c ? 'bmat' : 'wmat') + ' ' + t[1], MAT[c][ph], PAWN, DEF_MAT[ph]]);
+    i = 2;
+  }
+  else {
+    uciWrite('info string feature: unknown feature ' + t.join(' '));
+    return;
+  }
+  const rest = t.slice(i);
+  if (rest.length === 0) {
+    for (let j = 0; j < list.length; j++)
+      printFeature(list[j][0], list[j][1], list[j][2], list[j][3].length);
+    return;
+  }
+  // check everything before writing anything
+  const values = rest.length === 1 && rest[0] === 'def' ? null : rest;
+  for (let j = 0; j < list.length; j++) {
+    if (values && values.length !== list[j][3].length) {
+      uciWrite('info string feature: ' + list[j][0] + ' takes ' + list[j][3].length + ' values');
+      return;
+    }
+  }
+  for (let k = 0; values && k < values.length; k++) {
+    if (!/^-?\d+$/.test(values[k])) {
+      uciWrite('info string feature: bad value ' + values[k]);
+      return;
+    }
+  }
+  for (let j = 0; j < list.length; j++) {
+    const arr = list[j][1];
+    const first = list[j][2];
+    const def = list[j][3];
+    for (let k = 0; k < def.length; k++)
+      arr[first + k] = values ? parseInt(values[k]) : def[k];
+  }
+  phaseTotal();
+  for (let piece = PAWN; piece <= KING; piece++)
+    evalInit(piece);
   ttClear();  // scores in the hash were for the old eval
 }
 
@@ -2507,6 +2600,10 @@ function execTokens(tokens) {
       pstCommand(tokens);
       break;
 
+    case 'feature':
+      featureCommand(tokens);
+      break;
+
     case 'perfttests':
     case 'pt':
       perftTests();
@@ -2546,6 +2643,7 @@ function execTokens(tokens) {
       uciWrite('eval (e)                    show the static eval of the current position');
       uciWrite('pst                         show the piece square tables, wn mg etc, a1 to h8');
       uciWrite('pst <piece> [mg|eg] [def|<sq>|<sq> <v>|<64 v>]  print, reset or set a table, see the readme');
+      uciWrite('feature [<name> [def|<values>]]  print, reset or set the eval features, see the readme');
       uciWrite('perft (f) <depth>           count leaf nodes to the given depth');
       uciWrite('bench (h)                   search 50 positions and report nodes and nps');
       uciWrite('evaltests (et)              show the eval of the bench positions');

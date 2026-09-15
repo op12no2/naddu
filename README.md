@@ -136,6 +136,23 @@ endgame. Not case sensitive. Any change clears the hash.
 - `pst n mg <64 values>` - set a table, a printed line can be pasted back.
 - `pst n mg def`, `pst n def`, `pst def` - reset a table, a piece or everything to the PeSTO values.
 
+## Features
+
+The `feature` command prints, sets and resets the other numbers in the eval the same way. Values are given all at
+once, a printed line can be pasted back, and any change clears the hash. `feature` prints everything, `feature def`
+resets everything.
+
+- `feature tempo 10` - bonus for the side to move.
+- `feature phase 1 1 2 4` - phase weights for knight, bishop, rook and queen, the taper runs from their total at the
+  start, 24 by default, down to 0.
+- `feature shelter 0 4 8 12` - king shelter penalty by how far the nearest pawn is ahead of the king on each of the
+  three files around it, doubled on the king's file, middlegame only and only while the opponent has a queen.
+- `feature mopup 10 8 200` - in pawnless endings, per step the losing king is from the centre, per step the kings are
+  close, and the endgame lead needed to switch it on.
+- `feature mat mg 82 337 365 477 1025` - material from pawn to queen, `mg` or `eg`, for both colours, or `wmat` and
+  `bmat` for one colour.
+- `feature tempo def`, `feature mat mg def` - back to the defaults.
+
 ## Command line
 
 Naddu can also be started from a command line using `Node` or `Bun`:-
