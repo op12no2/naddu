@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Iterative deepening</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 70em;
+    margin: 2em auto;
+    padding: 0 1em;
+  }
+  #controls label { margin-right: 1em; }
+  #results {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2em;
+  }
+  .position { width: 400px; }
+  .position svg {
+    width: 100%;
+    border: 1px solid #ddd;
+  }
+  .caption { font-weight: bold; margin: 0.3em 0; }
+  table {
+    border-collapse: collapse;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  td, th {
+    text-align: right;
+    padding: 0.1em 0.6em 0.1em 0;
+  }
+  td:last-child, th:last-child { text-align: left; }
+  #summary { font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>Iterative deepening</h1>
+
+<p>What the search does as it goes deeper. Each position gets a worker searching to the chosen depth and the
+<a href="https://www.chessprogramming.org/Iterative_Deepening">iterations</a> are charted as they are reported: a bar
+per depth, height on a log scale, the total nodes so far, and the
+<a href="https://www.chessprogramming.org/Branching_Factor#EffectiveBranchingFactor">effective branching factor</a>
+written above each bar, the nodes of this iteration divided by the nodes of the last. The table under each chart has
+the score and the principal variation, so a change of mind shows up as a new first move. A quiet position and a
+tactical one look quite different, and a mate stops the count.</p>
+
+<p id="controls">
+  <label>Depth <select id="depth"></select></label>
+  <button id="start">Start</button>
+</p>
+
+<div id="results"></div>
+
+<p id="summary"></p>
+
+<script>
+const PRESETS = [
+  ['Start position', 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'],
+  ['Kiwipete',       'r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1'],
+  ['BK.05 (Nd5 or a4)', 'r1b2rk1/2q1b1pp/p2ppn2/1p6/3QP3/1BN1B3/PPP3PP/R4RK1 w - - 0 1'],
+  ['Rook ending',    '8/5pk1/6p1/8/2R5/6P1/r4PK1/8 w - - 0 1'],
+  ['Mate in 3',      '2r3k1/p4p2/3Rp2p/1p2P1pK/8/1P4P1/P3Q2P/1q6 b - - 0 1']
+];
+
+const results = document.getElementById('results');
+const summary = document.getElementById('summary');
+const depthEl = document.getElementById('depth');
+
+let positions = [];  // {worker, iters: [[depth, nodes, ms, score, pv]], svg, table, done}
+
+for (let d = 6; d <= 16; d++) {
+  const opt = document.createElement('option');
+  opt.textContent = d;
+  if (d === 11)
+    opt.selected = true;
+  depthEl.appendChild(opt);
+}
+
+function draw(p) {
+  const maxDepth = parseInt(depthEl.value);
+  const w = 380 / maxDepth;
+  let maxLog = 1;
+  for (let i = 0; i < p.iters.length; i++)
+    maxLog = Math.max(maxLog, Math.log10(p.iters[i][1]));
+  let html = '<line x1="10" y1="230" x2="390" y2="230" stroke="#999"/>';
+  let rows = '<tr><th>depth</th><th>nodes</th><th>ms</th><th>ebf</th><th>score</th><th>pv</th></tr>';
+  for (let i = 0; i < p.iters.length; i++) {
+    const it = p.iters[i];
+    const h = Math.log10(Math.max(1, it[1])) / maxLog * 190;
+    const x = 10 + (it[0] - 1) * w;
+    const ebf = i ? (it[1] / p.iters[i - 1][1]).toFixed(1) : '';
+    html += '<rect x="' + (x + 1) + '" y="' + (230 - h) + '" width="' + (w - 2) + '" height="' + h + '" fill="#36c"/>'
+      + '<text x="' + (x + w / 2) + '" y="' + (224 - h) + '" font-size="10" text-anchor="middle">' + ebf + '</text>'
+      + '<text x="' + (x + w / 2) + '" y="244" font-size="10" text-anchor="middle">' + it[0] + '</text>';
+    rows += '<tr><td>' + it[0] + '</td><td>' + it[1] + '</td><td>' + it[2] + '</td><td>' + ebf + '</td><td>' + it[3] + '</td><td>' + it[4] + '</td></tr>';
+  }
+  p.svg.innerHTML = html;
+  p.table.innerHTML = rows;
+}
+
+function onMessage(p, line) {
+  if (line.startsWith('info ')) {
+    const m = line.match(/depth (\d+) .*score (cp|mate) (-?\d+) nodes (\d+) time (\d+) .*pv ?(.*)$/);
+    if (m)
+      p.iters.push([parseInt(m[1]), parseInt(m[4]), parseInt(m[5]), (m[2] === 'mate' ? 'mate ' : '') + m[3], m[6].split(' ').slice(0, 5).join(' ')]);
+    draw(p);
+  }
+  else if (line.startsWith('bestmove ')) {
+    p.done = true;
+    p.worker.terminate();
+    let done = 0;
+    let ebf = 0;
+    let n = 0;
+    for (let i = 0; i < positions.length; i++) {
+      if (positions[i].done)
+        done++;
+      const its = positions[i].iters;
+      for (let j = 3; j < its.length; j++) {
+        ebf += its[j][1] / its[j - 1][1];
+        n++;
+      }
+    }
+    if (done === positions.length)
+      summary.textContent = done + ' of ' + positions.length + ' positions, mean branching factor from depth 4 on ' + (ebf / n).toFixed(2);
+  }
+}
+
+function start() {
+  for (let i = 0; i < positions.length; i++)
+    positions[i].worker.terminate();
+  positions = [];
+  results.innerHTML = '';
+  summary.textContent = '';
+  for (let i = 0; i < PRESETS.length; i++) {
+    const el = document.createElement('div');
+    el.className = 'position';
+    el.innerHTML = '<div class="caption">' + PRESETS[i][0] + '</div><svg viewBox="0 0 400 250"></svg><table></table>';
+    results.appendChild(el);
+    const p = {worker: new Worker('../naddu.js'), iters: [], svg: el.querySelector('svg'), table: el.querySelector('table'), done: false};
+    p.worker.onmessage = function(e) { onMessage(p, e.data); };
+    p.worker.postMessage('ucinewgame');
+    p.worker.postMessage('position fen ' + PRESETS[i][1]);
+    p.worker.postMessage('go depth ' + depthEl.value);
+    positions.push(p);
+  }
+}
+
+document.getElementById('start').onclick = start;
+
+start();
+</script>
+
+</body>
+</html>
