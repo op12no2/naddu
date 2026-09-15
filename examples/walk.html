@@ -71,9 +71,10 @@
 
 <h1>Parameter walk</h1>
 
-<p>A random walk over the search parameters. The parameters and their defaults are fetched with the
-<code>search</code> command. Each candidate changes one value of the current best by one step, a tenth of its
-default or at least 1, up or down, and plays a match against the current best on a clock, two workers per game so
+<p>A random walk over the search parameters, or over the eval features other than the piece square tables. The
+parameters and their defaults are fetched with the <code>search</code> or <code>feature</code> command, so the
+page follows the engine. Each candidate changes one value of the current best by one step, a tenth of its default
+or at least 1, up or down, and plays a match against the current best on a clock, two workers per game so
 no hash is shared, random four ply openings, colours alternated, several games at once. If the candidate scores at
 least the accept percentage it becomes the best, and the walk goes on for ever. The best is kept in this browser
 so a reload carries on.</p>
@@ -82,9 +83,13 @@ so a reload carries on.</p>
 and what wins at ten seconds a game may not win at a longer control, though it is the control Naddu is tested at. It is a toy that shows the
 shape of <a href="https://www.chessprogramming.org/Automated_Tuning">automated tuning</a>, of which
 <a href="https://www.chessprogramming.org/SPSA">SPSA</a> is the serious version, with none of the maths. Raising the
-games per candidate and the accept percentage makes it less of a toy.</p>
+games per candidate and the accept percentage makes it less of a toy. In the eval walk the material steps are big, a
+tenth of a piece, and the walk can drift the whole scale that the search margins are written in. The smother and
+cuddle terms start at zero and cost a fifth of the speed once on, which is a fair price on a clock and one the walk
+will usually refuse to pay.</p>
 
 <p id="controls">
+  <label>Walk <select id="mode"><option value="search">search</option><option value="eval">eval</option></select></label>
   <label>Games <input id="games-n" type="number" value="64" min="2" step="2" style="width:4em"></label>
   <label>Accept <input id="accept" type="number" value="55" min="50" max="100" style="width:4em"> %</label>
   <label>Clock <input id="clock" type="number" value="10" min="1" style="width:4em"> s</label>
@@ -116,8 +121,15 @@ const PIECES = {
 const FILES = 'abcdefgh';
 const MAX_PLY = 300;
 const RANDOM_PLIES = 4;
-const STORE = 'naddu-walk-best';
+const STORE = 'naddu-walk-best-';  // plus the mode
+// what each walk asks the engine for, the replies are the parameter lists
+const PROBES = {
+  search: ['search'],
+  eval: ['feature tempo', 'feature phase', 'feature shelter', 'feature mopup', 'feature smother mg', 'feature smother eg',
+          'feature cuddle mg', 'feature cuddle eg', 'feature mat mg', 'feature mat eg']
+};
 
+const modeEl = document.getElementById('mode');
 const paramsEl = document.getElementById('params');
 const status = document.getElementById('status');
 const bar = document.getElementById('bar').firstElementChild;
@@ -145,14 +157,15 @@ function rand(n) {
 function copy(p) {
   const out = [];
   for (let i = 0; i < p.length; i++)
-    out.push({name: p[i].name, values: p[i].values.slice()});
+    out.push({cmd: p[i].cmd, name: p[i].name, values: p[i].values.slice()});
   return out;
 }
 
+// the command lines that set the lists, e.g. "search lmr 3 3 1 12 2" or "feature smother mg 0 0 0 0"
 function lines(p) {
   const out = [];
   for (let i = 0; i < p.length; i++)
-    out.push('search ' + p[i].name + ' ' + p[i].values.join(' '));
+    out.push(p[i].cmd + ' ' + p[i].name + ' ' + p[i].values.join(' '));
   return out;
 }
 
@@ -244,7 +257,7 @@ function finishCandidate() {
       + '</td><td>+' + score[0] + ' =' + score[1] + ' -' + score[2] + '</td><td>' + elo(p, n) + '</td>';
     best = cand;
     try {
-      localStorage.setItem(STORE, JSON.stringify(best));
+      localStorage.setItem(STORE + modeEl.value, JSON.stringify(best));
     }
     catch (e) {
     }
@@ -419,7 +432,7 @@ function start() {
 
 function resetBest() {
   try {
-    localStorage.removeItem(STORE);
+    localStorage.removeItem(STORE + modeEl.value);
   }
   catch (e) {
   }
@@ -428,36 +441,54 @@ function resetBest() {
 }
 
 // the parameters and defaults come from the engine, readyok says the list is complete
-const probe = new Worker('../naddu.js');
-probe.onmessage = function(e) {
-  const parts = e.data.split(' ');
-  if (parts[0] === 'search') {
-    const values = [];
-    for (let i = 2; i < parts.length; i++)
-      values.push(parseInt(parts[i]));
-    defaults.push({name: parts[1], values: values});
-    return;
-  }
-  if (parts[0] !== 'readyok')
-    return;
-  probe.terminate();
-  best = copy(defaults);
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORE));
-    if (saved && saved.length === defaults.length)
-      best = saved;
-  }
-  catch (e) {
-  }
-  cand = copy(best);
-  change = [-1, -1];
-  showParams();
-  status.textContent = 'press Start';
-  document.getElementById('start').onclick = start;
-  document.getElementById('reset').onclick = resetBest;
-};
-probe.postMessage('search');
-probe.postMessage('isready');
+function load() {
+  stop();
+  defaults = [];
+  acceptedEl.innerHTML = '';
+  summary.textContent = '';
+  const probe = new Worker('../naddu.js');
+  probe.onmessage = function(e) {
+    const parts = e.data.split(' ');
+    if (parts[0] === 'search' || parts[0] === 'feature') {
+      // material prints a white and a black line, keep the white one as "mat" so candidates stay symmetric
+      if (parts[1] === 'bmat')
+        return;
+      if (parts[1] === 'wmat')
+        parts[1] = 'mat';
+      // a feature with a phase has a two word name, e.g. "smother mg"
+      const n = parts[0] === 'feature' && (parts[2] === 'mg' || parts[2] === 'eg') ? 2 : 1;
+      const values = [];
+      for (let i = n + 1; i < parts.length; i++)
+        values.push(parseInt(parts[i]));
+      defaults.push({cmd: parts[0], name: parts.slice(1, n + 1).join(' '), values: values});
+      return;
+    }
+    if (parts[0] !== 'readyok')
+      return;
+    probe.terminate();
+    best = copy(defaults);
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORE + modeEl.value));
+      if (saved && saved.length === defaults.length)
+        best = saved;
+    }
+    catch (e) {
+    }
+    cand = copy(best);
+    change = [-1, -1];
+    showParams();
+    status.textContent = 'press Start';
+  };
+  const probes = PROBES[modeEl.value];
+  for (let i = 0; i < probes.length; i++)
+    probe.postMessage(probes[i]);
+  probe.postMessage('isready');
+}
+
+document.getElementById('start').onclick = start;
+document.getElementById('reset').onclick = resetBest;
+modeEl.onchange = load;
+load();
 </script>
 
 </body>

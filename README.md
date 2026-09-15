@@ -53,7 +53,7 @@ Try this example here: https://op12no2.github.io/naddu/examples/hello_world.html
 - [scaling](https://op12no2.github.io/naddu/examples/scaling.html) - root moves shared out between 1 to 16 workers, speedup plotted against the ideal.
 - [deepening](https://op12no2.github.io/naddu/examples/deepening.html) - nodes per iteration and the branching factor charted live for five positions side by side.
 - [symmetry](https://op12no2.github.io/naddu/examples/symmetry.html) - eight workers play random games and check every position evals the same when colour flipped.
-- [walk](https://op12no2.github.io/naddu/examples/walk.html) - a random walk over the search parameters, each candidate plays the current best on a clock, a toy tuner.
+- [walk](https://op12no2.github.io/naddu/examples/walk.html) - a random walk over the search parameters or the eval features, each candidate plays the current best on a clock, a toy tuner.
 
 ## UCI commands
 
