@@ -147,8 +147,9 @@ resets everything.
 - `feature tempo 10` - bonus for the side to move.
 - `feature phase 1 1 2 4` - phase weights for knight, bishop, rook and queen, the taper runs from their total at the
   start, 24 by default, down to 0.
-- `feature shelter 0 4 8 12` - king shelter penalty by how far the nearest pawn is ahead of the king on each of the
-  three files around it, doubled on the king's file, middlegame only and only while the opponent has a queen.
+- `feature shelter 0 4 8 12` - king shelter, the penalty for the nearest own pawn being 0, 1, 2 or 3 ranks ahead
+  of the king on each of the three files around it, none within three counting as 3, the king's own file doubled,
+  middlegame only and only while the opponent has a queen.
 - `feature mopup 10 8 200` - in pawnless endings, per step the losing king is from the centre, per step the kings are
   close, and the endgame lead needed to switch it on.
 - `feature mat mg 82 337 365 477 1025` - material from pawn to queen, `mg` or `eg`, for both colours, or `wmat` and
