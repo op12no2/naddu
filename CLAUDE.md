@@ -35,12 +35,13 @@ Simplicity is just as important.
 
 ## match testing
 
-`./tooling/match.sh` is the acceptance test: 2000 games at 1+0.1, `naddu.js` v `releases/naddu.js`,
+`./tooling/match.sh` is the acceptance test: 2000 games at 10+0.1, `naddu.js` v `releases/naddu.js`,
 via fastchess using bun binaries. One run, verdict is final, no reruns, no SPRT.
 Accept a patch if it is not clearly worse. Test per feature, never tune parameters.
-PGN is saved to `tooling/match.pgn` for style analysis.
+PGN is saved to `tooling/match.pgn` for style analysis. The tc was 1+0.1 until Sep 15 2026, the results
+in the todo notes below are from that; 10+0.1 is a more realistic tc and about 45 Elo stronger for Naddu.
 
-- `./tooling/match.sh` full 2000 game match (~20 mins)
+- `./tooling/match.sh` full 2000 game match (~2 hours)
 - `ROUNDS=4 CONCURRENCY=8 ./tooling/match.sh` quick 8 game smoke test
 - extra args are passed to fastchess
 - speed-only patches (bench node count unchanged) don't need a match, compare bench nps

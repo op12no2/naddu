@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 2000 game match, dev naddu.js v releases/naddu.js, 1+0.1, using fastchess.
+# 2000 game match, dev naddu.js v releases/naddu.js, 10+0.1, using fastchess.
 # Run from anywhere, e.g. ./tooling/match.sh
 # Override with env vars, e.g. ROUNDS=10 ./tooling/match.sh for a quick smoke test,
 # or BASE=/path/to/engine ./tooling/match.sh to play against another uci engine.
@@ -16,7 +16,7 @@ fi
 
 rounds=${ROUNDS:-1000}          # 2 games per round with -repeat
 concurrency=${CONCURRENCY:-16}
-tc=${TC:-1+0.1}
+tc=${TC:-10+0.1}
 timemargin=${TIMEMARGIN:-200}   # some engines overshoot the clock, raise this for a fair gauntlet
 book=tooling/4moves_noob.epd
 pgn=tooling/match.pgn
