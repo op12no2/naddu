@@ -54,6 +54,44 @@ Try this example here: https://op12no2.github.io/naddu/examples/hello_world.html
 - [deepening](https://op12no2.github.io/naddu/examples/deepening.html) - nodes per iteration and the branching factor charted live for five positions side by side.
 - [symmetry](https://op12no2.github.io/naddu/examples/symmetry.html) - eight workers play random games and check every position evals the same when colour flipped.
 
+## UCI commands
+
+UCI is richer than this, these are the commands Naddu implements:-
+
+- `uci` - engine name and author, then `uciok`.
+- `isready` - replies `readyok`.
+- `ucinewgame` - clears the hash and history, do this before a new game.
+- `setoption name Hash value <mb>` - hash table size, default 16.
+- `position startpos [moves ...]` and `position fen <fen> [moves ...]`.
+- `go depth <n>`, `go nodes <n>`, `go movetime <ms>`, `go infinite` and `go wtime <ms> btime <ms> winc <ms> binc <ms> [movestogo <n>]`.
+- `stop` - accepted but does nothing, see below.
+- `quit` - exits, in a worker it closes the worker.
+
+A search runs to completion inside the worker and replies with `info` lines and then `bestmove`. Commands sent
+while it is searching queue up until it finishes. So `stop` cannot interrupt a search and `go infinite` runs
+until the worker is killed. To stop a search, kill the worker and make a new one:-
+
+```
+naddu.terminate();
+naddu = new Worker('naddu.js');
+```
+
+## UCI extensions
+
+Extra commands handy for web pages and testing, each has a one letter short form:-
+
+- `board` (`b`) - show the current position.
+- `moves` (`l`) - list the legal moves, or `checkmate` or `stalemate` if there are none.
+- `eval` (`e`) - static eval of the current position from the side to move's point of view.
+- `pst` - the piece square tables, a1 to h8 from the white side, one line per piece and phase.
+- `perft <depth>` (`f`) - leaf node count.
+- `bench` (`h`) - search 50 positions, report nodes and nps.
+- `evaltests` (`et`) - evals of the bench positions.
+- `perfttests` (`pt`) - the perft test suite, takes a while.
+- `?` or `help` - list the commands.
+
+`go` and `position` have short forms too, `g` and `p`, and `ucinewgame` is `u`. `go` on its own thinks for 100 ms.
+
 ## Command line
 
 Naddu can also be started from a command line using `Node` or `Bun`:-

@@ -2484,6 +2484,9 @@ historyInitOnce();
 
 if (IS_NODE) {
 
+  // a closed pipe (naddu.js bench | head) is not an error worth a stack trace
+  process.stdout.on('error', function() {});
+
   const readline = require('readline');
   rl = readline.createInterface({
     input: process.stdin,
