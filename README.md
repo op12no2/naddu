@@ -78,14 +78,14 @@ naddu = new Worker('naddu.js');
 
 ## UCI options
 
-Only one so far, reported by `uci` and set with `setoption name <name> value <value>`, the name is not case sensitive:-
+Reported by `uci` and set with `setoption name <name> value <value>`, the name is not case sensitive:-
 
 - `Hash` - hash table size in MB, spin, default 16, min 1, max 1024. Setting it clears the table. The size is
   rounded down to a power of two entries of 16 bytes, so 24 gives the same table as 16.
 
 ## UCI extensions
 
-Extra commands handy for web pages and testing, each has a one letter short form:-
+Extra commands handy for web pages and testing, with any shortform in parenthsis:-
 
 - `board` (`b`) - show the current position.
 - `moves` (`l`) - list the legal moves, or `checkmate` or `stalemate` if there are none.
@@ -97,7 +97,29 @@ Extra commands handy for web pages and testing, each has a one letter short form
 - `perfttests` (`pt`) - the perft test suite, takes a while.
 - `?` or `help` - list the commands.
 
-`go` and `position` have short forms too, `g` and `p`, and `ucinewgame` is `u`. `go` on its own thinks for 100 ms.
+Some standard UCI commands and sub-commands have shortforms too:-
+
+- `ucinewgame` (`u`)
+- `position` (`p`) 
+- `startpos` (`s`)
+- `fen` (`f`)
+- `go` (`g`)
+- `depth` (`d`)
+- `movetime` (`m`)
+- `nodes` (`n`)
+- `quit` (`q`)
+
+Allowing useful quick sequences like:-
+
+```
+u
+p s
+b
+g d 10
+q
+```
+
+`go` on its own searches for 100 ms.
 
 ## Command line
 
