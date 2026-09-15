@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eval landscape</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 70em;
+    margin: 2em auto;
+    padding: 0 1em;
+  }
+  #controls label { margin-right: 1em; }
+  #fen { width: 34em; }
+  #board {
+    display: grid;
+    grid-template-columns: repeat(8, 48px);
+    grid-template-rows: repeat(8, 48px);
+    border: 2px solid #444;
+    margin: 1em 0;
+  }
+  #board .sq { font-size: 34px; }
+  .sq {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    user-select: none;
+  }
+  .light { background: #eed; }
+  .dark { background: #997; }
+  #maps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1em;
+  }
+  .map { width: 208px; }
+  .map .board {
+    display: grid;
+    grid-template-columns: repeat(8, 26px);
+    grid-template-rows: repeat(8, 26px);
+    border: 1px solid #444;
+  }
+  .map .sq { font-size: 20px; }
+  .caption {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 13px;
+    margin: 0.3em 0;
+  }
+  #results {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 13px;
+    white-space: pre-wrap;
+  }
+  #summary { font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>Eval landscape</h1>
+
+<p>Where would the <a href="https://www.chessprogramming.org/Evaluation">static eval</a> like each piece to be? For every
+piece in the position a worker lifts it and puts it on each empty square in turn, asking the engine for the eval each
+time. The heat maps show the change from the eval of the position as it stands, from the point of view of the piece's
+owner, red where the piece would be better placed and blue where it would be worse, on one colour scale shared by all
+the maps. Unlike the <a href="pst.html">piece square tables</a> this includes everything else in the eval, material
+interactions, king shelter and so on, in the context of this position. Castling rights and en passant are dropped
+first so the moved pieces do not leave stale rights behind. Hover a square for the number. Pieces are lifted without
+any regard to legality, so a king may sit in check.</p>
+
+<p id="controls">
+  <label>Position <select id="preset"></select></label>
+  <label>FEN <input id="fen" type="text"></label>
+  <button id="start">Start</button>
+</p>
+
+<div id="board"></div>
+
+<div id="maps"></div>
+
+<p id="summary"></p>
+
+<pre id="results"></pre>
+
+<script>
+const PIECES = {
+  K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙',
+  k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟',
+  '.': ''
+};
+const NAMES = {k: 'king', q: 'queen', r: 'rook', b: 'bishop', n: 'knight', p: 'pawn'};
+const PRESETS = [
+  ['Kiwipete',       'r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1'],
+  ['Start position', 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'],
+  ['BK.05 (Nd5 or a4)', 'r1b2rk1/2q1b1pp/p2ppn2/1p6/3QP3/1BN1B3/PPP3PP/R4RK1 w - - 0 1'],
+  ['BK.13 (b4)',     'r2q1rk1/4bppp/p2p4/2pP4/3pP3/3Q4/PP1B1PPP/R3R1K1 w - - 0 1'],
+  ['Rook ending',    '8/5pk1/6p1/8/2R5/6P1/r4PK1/8 w - - 0 1']
+];
+const FILES = 'abcdefgh';
+
+const boardEl = document.getElementById('board');
+const maps = document.getElementById('maps');
+const summary = document.getElementById('summary');
+const results = document.getElementById('results');
+const presetEl = document.getElementById('preset');
+const fenEl = document.getElementById('fen');
+
+let workers = [];   // one per piece: {worker, piece, sq, targets, values, boardEl, caption}
+let squares = [];   // 64 chars a1..h8
+let stm = 'w';
+let base = 0;       // eval of the position as it stands, from white's view
+let done = 0;
+
+for (let i = 0; i < PRESETS.length; i++) {
+  const opt = document.createElement('option');
+  opt.value = i;
+  opt.textContent = PRESETS[i][0];
+  presetEl.appendChild(opt);
+}
+presetEl.onchange = function() { fenEl.value = PRESETS[presetEl.value][1]; };
+fenEl.value = PRESETS[0][1];
+
+function makeBoard(el) {
+  for (let rank = 7; rank >= 0; rank--) {
+    for (let file = 0; file < 8; file++) {
+      const sq = document.createElement('div');
+      sq.className = 'sq ' + ((rank + file) % 2 ? 'light' : 'dark');
+      sq.dataset.sq = rank * 8 + file;
+      el.appendChild(sq);
+    }
+  }
+}
+
+function show(el, sqs) {
+  for (let i = 0; i < 64; i++)
+    el.children[i].textContent = PIECES[sqs[el.children[i].dataset.sq]];
+}
+
+// board part of a fen to 64 squares a1..h8 and back
+function parseFen(fen) {
+  const sqs = [];
+  for (let i = 0; i < 64; i++)
+    sqs.push('.');
+  const rows = fen.split(' ')[0].split('/');
+  for (let r = 0; r < 8; r++) {
+    let file = 0;
+    for (let i = 0; i < rows[r].length; i++) {
+      const c = rows[r][i];
+      if (c >= '1' && c <= '8')
+        file += parseInt(c);
+      else
+        sqs[(7 - r) * 8 + file++] = c;
+    }
+  }
+  return sqs;
+}
+
+function makeFen(sqs) {
+  let fen = '';
+  for (let rank = 7; rank >= 0; rank--) {
+    let empty = 0;
+    for (let file = 0; file < 8; file++) {
+      const c = sqs[rank * 8 + file];
+      if (c === '.') {
+        empty++;
+      }
+      else {
+        fen += (empty ? empty : '') + c;
+        empty = 0;
+      }
+    }
+    fen += (empty ? empty : '') + (rank ? '/' : '');
+  }
+  return fen + ' ' + stm + ' - - 0 1';
+}
+
+function name(w) {
+  return (w.piece === w.piece.toUpperCase() ? 'white ' : 'black ') + NAMES[w.piece.toLowerCase()] + ' ' + FILES[w.sq & 7] + ((w.sq >> 3) + 1);
+}
+
+// red positive, blue negative, white at 0
+function colour(v, max) {
+  const l = 100 - Math.round(Math.abs(v) / max * 50);
+  return 'hsl(' + (v < 0 ? 220 : 0) + ', 80%, ' + l + '%)';
+}
+
+function draw() {
+  let max = 1;
+  for (let i = 0; i < workers.length; i++)
+    for (let j = 0; j < workers[i].values.length; j++)
+      max = Math.max(max, Math.abs(workers[i].values[j]));
+  let text = '';
+  for (let i = 0; i < workers.length; i++) {
+    const w = workers[i];
+    let best = 0;
+    let worst = 0;
+    for (let j = 0; j < w.targets.length; j++) {
+      const v = w.values[j];
+      const cell = w.boardEl.children[(7 - (w.targets[j] >> 3)) * 8 + (w.targets[j] & 7)];  // a1..h8 to grid order, rank 8 first
+      cell.style.background = colour(v, max);
+      cell.title = FILES[w.targets[j] & 7] + ((w.targets[j] >> 3) + 1) + ' ' + (v > 0 ? '+' : '') + v;
+      if (v > w.values[best])
+        best = j;
+      if (v < w.values[worst])
+        worst = j;
+    }
+    text += name(w) + ': best ' + FILES[w.targets[best] & 7] + ((w.targets[best] >> 3) + 1) + ' ' + (w.values[best] > 0 ? '+' : '')
+      + w.values[best] + ', worst ' + FILES[w.targets[worst] & 7] + ((w.targets[worst] >> 3) + 1) + ' ' + w.values[worst] + '\n';
+  }
+  results.textContent = text;
+  summary.textContent = workers.length + ' of ' + workers.length + ' pieces, eval ' + (base > 0 ? '+' : '') + base + ' for white, colour scale to ' + max;
+}
+
+function onMessage(w, line) {
+  if (!/^-?\d+$/.test(line))
+    return;
+  // eval is for the side to move, turn it into the piece owner's view and take off the base
+  let v = parseInt(line);
+  if (stm === 'b')
+    v = -v;
+  if (w.piece !== w.piece.toUpperCase())
+    v = -v;
+  w.values.push(v - (w.piece === w.piece.toUpperCase() ? base : -base));
+  if (w.values.length === w.targets.length) {
+    w.worker.terminate();
+    w.caption.textContent = name(w);
+    if (++done === workers.length)
+      draw();
+  }
+}
+
+function start() {
+  for (let i = 0; i < workers.length; i++)
+    workers[i].worker.terminate();
+  workers = [];
+  maps.innerHTML = '';
+  results.textContent = '';
+  summary.textContent = '';
+  done = 0;
+  const fen = fenEl.value.trim();
+  squares = parseFen(fen);
+  stm = fen.split(' ')[1] === 'b' ? 'b' : 'w';
+  show(boardEl, squares);
+  // the base eval from a throwaway worker, then the piece workers
+  const w0 = new Worker('../naddu.js');
+  w0.onmessage = function(e) {
+    if (!/^-?\d+$/.test(e.data))
+      return;
+    base = parseInt(e.data) * (stm === 'b' ? -1 : 1);
+    w0.terminate();
+    for (let sq = 0; sq < 64; sq++) {
+      if (squares[sq] === '.')
+        continue;
+      const el = document.createElement('div');
+      el.className = 'map';
+      const caption = document.createElement('div');
+      caption.className = 'caption';
+      const b = document.createElement('div');
+      b.className = 'board';
+      makeBoard(b);
+      show(b, squares);
+      el.appendChild(caption);
+      el.appendChild(b);
+      maps.appendChild(el);
+      const w = {worker: new Worker('../naddu.js'), piece: squares[sq], sq: sq, targets: [], values: [], boardEl: b, caption: caption};
+      caption.textContent = name(w) + ' ...';
+      w.worker.onmessage = function(e) { onMessage(w, e.data); };
+      const pawn = w.piece.toLowerCase() === 'p';
+      for (let to = 0; to < 64; to++) {
+        if (squares[to] !== '.' || pawn && (to < 8 || to >= 56))
+          continue;
+        w.targets.push(to);
+        const sqs = squares.slice();
+        sqs[sq] = '.';
+        sqs[to] = w.piece;
+        w.worker.postMessage('position fen ' + makeFen(sqs));
+        w.worker.postMessage('eval');
+      }
+      workers.push(w);
+    }
+  };
+  w0.postMessage('position fen ' + makeFen(squares));
+  w0.postMessage('eval');
+}
+
+makeBoard(boardEl);
+document.getElementById('start').onclick = start;
+
+start();
+</script>
+
+</body>
+</html>
