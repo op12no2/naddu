@@ -40,9 +40,10 @@
 
 <h1>Piece square tables</h1>
 
-<p>Naddu's <a href="https://www.chessprogramming.org/Piece-Square_Tables">piece square tables</a> (the
-<a href="https://www.chessprogramming.org/PeSTO%27s_Evaluation_Function">PeSTO</a> values) as heat maps, from white's side
-with rank 8 at the top. The tables are fetched from the engine with the <code>pst</code> command, which can also change them, so
+<p>Naddu's <a href="https://www.chessprogramming.org/Piece-Square_Tables">piece square tables</a> as heat maps, from
+white's side with rank 8 at the top. They were tuned from zero on the quiet-labeled positions with the
+<a href="tuner.html">tuner</a> page, replacing the
+<a href="https://www.chessprogramming.org/PeSTO%27s_Evaluation_Function">PeSTO</a> values Naddu started with. The tables are fetched from the engine with the <code>pst</code> command, which can also change them, so
 if you edit them in <code>naddu.js</code> or with the command this page follows. Black's tables are white's
 flipped unless set separately, so only white's are shown. Middlegame (mg) and endgame (eg) values are blended by the
 <a href="https://www.chessprogramming.org/Tapered_Eval">tapered eval</a> as pieces come off. One colour scale is shared by

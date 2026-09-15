@@ -8,7 +8,9 @@ All you need is `naddu.js` from the repo root.
 
 The code is written in a straightforward style and deliberately easy to tweak.
 
-Strength is around 2400 Elo.
+Strength is around 2000 Elo.
+
+The eval was tuned from zero on 725,000 positions with the tuner example, so the values are Naddu's own, see Tuning.
 
 The hash table defaults to 16 MB and can be set with `setoption name Hash value <mb>`.
 
@@ -146,7 +148,7 @@ pst <piece> [mg|eg] <v1> <v2> ... <v64>
 - `mg|eg` - middlegame or endgame table, both if left out.
 - `<sq>` - an absolute square, `e4` is e4 for either colour.
 - `<v>` - whole centipawns, 64 of them in the order a1 b1 ... h1 a2 ... h8.
-- `def` - reset to the PeSTO values.
+- `def` - reset to the default values.
 
 ### Examples
 
@@ -270,6 +272,23 @@ move and uses the whole increment.
 
 `search lmr def` and `search def` reset one parameter or everything. Changing these changes the node count, so run
 `bench` to see the effect and a match to see if it was worth it.
+
+## Tuning
+
+The eval, the tables, material, tempo, shelter, smother and cuddle, was tuned from zero by gradient descent on
+`examples/quiet-labeled.epd`, the 725,000 result labelled positions of the Zurichess quiet set, with
+`examples/tuner.html`. It replaced the PeSTO values Naddu started with at a cost of about 15 Elo, accepted for the
+sake of having its own values. To tune again:-
+
+1. Open the tuner example, pick engine values or zero, set the rate and epochs, press Start and wait for the loss to
+   settle. The page checks its copy of the eval against the engine when it loads and says if they differ.
+2. Copy the `pst` and `feature` lines it prints into a file.
+3. `node tooling/apply.js file` writes them into the defaults in `naddu.js`.
+4. If the tuner reported the eval scale moving, scale the search margins to match with the `search` command and
+   apply those lines too.
+5. Play a match against the release, keep it if it is not clearly worse.
+
+The walk and inertia examples do the same for the search parameters and print lines the tool takes too.
 
 ## Eval breakdown
 

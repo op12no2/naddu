@@ -51,7 +51,9 @@ in the todo notes below are from that; 10+0.1 is a more realistic tc and about 4
 Strength estimate (Sep 3 2026, engine at commit aec6051, 2+0.2, 2000 games each, vs Stash with the user's ratings
 14=2058 15=2173 17=2297 18=2380): +260, +171, +92, +7 => about 2350 at this tc. Old Stash versions lose on time at 1+0.1,
 hence 2+0.2 and the margin. At 10+0.1 v Stash 18 it was +52 +/- 14 (2000 games), i.e. about 2430, so the js speed
-handicap is worth ~45 Elo between those controls. Fastchess hangs after the last games of a match; kill it and the result
+handicap is worth ~45 Elo between those controls. Sep 15 2026: the PeSTO eval was replaced by values tuned from
+zero (examples/tuner.html on examples/quiet-labeled.epd, 5000 epochs): -15 +/- 21 v the PeSTO release after 667 games
+at 10+0.1, accepted by the user for the sake of Naddu's own values; README says about 2000 until regauged. Fastchess hangs after the last games of a match; kill it and the result
 stands. Gauntlet pgns are in releases/.
 
 ## git workflow
@@ -101,6 +103,7 @@ engine and the next match measures only the next feature.
 - passed pawns in eval - tried Sep 2026 (per-file rank tracking, bonus 0/0/5/10/20/40/60 mg, 0/5/15/30/50/85/130 eg by rank): -19 +/- 12 Elo, rejected. PeSTO PSTs already reward advanced pawns and eval got 30% slower. A retry needs a different design, not smaller numbers.
 - mobility in eval - tried Sep 2026 together with fruit-style king zone attacks (one ray walk per piece in evaluate, mobility relative to a baseline, N/B/R/Q attack units 2/2/3/5 with a weight by attacker count): -24 +/- 12 Elo, rejected. The ray walk costs ~37% nps and the terms did not earn it back at 1+0.1. Any retry needs attack tables or a much cheaper approximation.
 - king safety in eval - pawn shelter v1 (0/8/16/25 by pawn distance, always on): -11 +/- 12, rejected. v2 (halved to 0/4/8/12, only while the opponent has a queen): +6 +/- 12, accepted Sep 2026. The attack half needs mobility-style ray walking which costs ~37% nps, see mobility.
+- eval tuned from zero - Sep 15 2026, see the strength note above. The tuned values include non zero smother and cuddle, so the second board walk is on and nps is ~20% lower than with them at zero; a cheap step mobility term (free first steps per piece, no ray walks) is the next idea, to be tuned the same way.
 - king tropism (smother) - tried Sep 15 2026 as `feature smother mg 3 2 2 4`, bonus per king step closer to the enemy king for N B R Q: -37 +/- 24 after 200 games at 10+0.1, stopped early by the user, defaults left at zero. The terms cost ~20% nps when on (a second board walk). They stay as style knobs, see the feature command.
 - lmp - tried Sep 2026 (non-PV, depth <= 3, skip quiet moves after 3 + 3*depth*depth): -4 +/- 11 Elo, neutral, left out as not worth the code on top of futility pruning
 
