@@ -53,6 +53,7 @@ Try this example here: https://op12no2.github.io/naddu/examples/hello_world.html
 - [scaling](https://op12no2.github.io/naddu/examples/scaling.html) - root moves shared out between 1 to 16 workers, speedup plotted against the ideal.
 - [deepening](https://op12no2.github.io/naddu/examples/deepening.html) - nodes per iteration and the branching factor charted live for five positions side by side.
 - [symmetry](https://op12no2.github.io/naddu/examples/symmetry.html) - eight workers play random games and check every position evals the same when colour flipped.
+- [hash](https://op12no2.github.io/naddu/examples/hash.html) - eight workers hash random positions, checks for collisions, a linear relation between the halves, bit balance and slot spread.
 - [walk](https://op12no2.github.io/naddu/examples/walk.html) - a random walk over the search parameters or the eval features, each candidate plays the current best on a clock, a toy tuner.
 - [inertia](https://op12no2.github.io/naddu/examples/inertia.html) - nudge every search parameter or eval feature down and up and see how far the STS score moves.
 - [tuner](https://op12no2.github.io/naddu/examples/tuner.html) - a gradient descent tuner for the whole eval on 725,000 result labelled positions, from the engine values or from zero, workers share the data.
@@ -94,6 +95,7 @@ Extra commands handy for web pages and testing, with any shortform in parenthsis
 - `moves` (`l`) - list the legal moves, or `checkmate` or `stalemate` if there are none.
 - `eval` (`e`) - static eval of the current position from the side to move's point of view.
 - `eval verbose` (`e v`) - the eval itemised by term, see below.
+- `hash` - the two 32 bit halves of the position hash, in hex, and its fen.
 - `pst` - print, set or reset the piece square tables, see below.
 - `feature` - print, set or reset the other eval numbers, tempo, phase weights and so on, see below.
 - `search` - print, set or reset the search parameters, pruning, reductions, windows and the clock, see below.

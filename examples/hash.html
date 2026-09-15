@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hash quality</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 70em;
+    margin: 2em auto;
+    padding: 0 1em;
+  }
+  table {
+    border-collapse: collapse;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 14px;
+    margin: 1em 0;
+  }
+  td, th {
+    text-align: left;
+    padding: 0.3em 1.2em 0.3em 0;
+    vertical-align: top;
+  }
+  .pass { color: #070; }
+  .fail { color: #a00; }
+  #progress { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px; }
+  #summary { font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>Hash quality</h1>
+
+<p>Naddu's <a href="https://www.chessprogramming.org/Zobrist_Hashing">Zobrist hash</a> is two 32 bit halves. Eight
+workers play random games and report the hash of every position with the <code>hash</code> command, then the page
+checks the keys the way a hash table cares about them:</p>
+
+<ul>
+  <li><b>Collisions.</b> Two different positions with the same 64 bits. With a sound key this is a once in a lifetime
+    event; with a 32 bit key in disguise it happens every few hundred thousand positions.</li>
+  <li><b>Linearity.</b> Zobrist keys are combined by exclusive or, which is addition over GF(2), so if the second
+    half of every key is a linear function of the first, the second half of every position's hash is too and it
+    verifies nothing. The page fits such a function from a few positions by Gaussian elimination over GF(2) and
+    tries it on all the rest, both ways round.</li>
+  <li><b>Bit balance.</b> Each of the 64 bits should be set in half the positions.</li>
+  <li><b>Slot spread.</b> The low bits pick the hash table slot, so the positions should spread evenly over them.</li>
+</ul>
+
+<p id="progress"></p>
+
+<table id="results"></table>
+
+<p id="summary"></p>
+
+<script>
+const WORKERS = 8;
+const PER_WORKER = 25000;
+const MAX_PLY = 120;
+const SLOTS = 1024;  // buckets from the low bits for the spread test
+
+const progress = document.getElementById('progress');
+const results = document.getElementById('results');
+const summary = document.getElementById('summary');
+
+const seen = {};      // fen => [lo, hi]
+const byHash = {};    // lo + ' ' + hi => fen
+let collisions = [];
+let los = [], his = [];
+let total = 0;
+let finished = 0;
+
+let seed = 777;
+function rand(n) {
+  seed ^= seed << 13;
+  seed ^= seed >>> 17;
+  seed ^= seed << 5;
+  return (seed >>> 0) % n;
+}
+
+function play(w) {
+  w.worker.postMessage('position startpos moves ' + w.moves.join(' '));
+  w.worker.postMessage('hash');
+  w.worker.postMessage('moves');
+}
+
+function onMessage(w, line) {
+  if (line.startsWith('hash ')) {
+    const parts = line.split(' ');
+    const lo = parseInt(parts[1], 16) >>> 0;
+    const hi = parseInt(parts[2], 16) >>> 0;
+    const fen = parts.slice(3).join(' ');
+    if (!seen[fen]) {
+      seen[fen] = 1;
+      const key = lo + ' ' + hi;
+      if (byHash[key] && byHash[key] !== fen)
+        collisions.push([fen, byHash[key], parts[1] + ' ' + parts[2]]);
+      byHash[key] = fen;
+      los.push(lo);
+      his.push(hi);
+    }
+    w.count++;
+    total++;
+    if ((total & 1023) === 0)
+      progress.textContent = total + ' positions, ' + los.length + ' distinct';
+    if (w.count >= PER_WORKER) {
+      w.worker.terminate();
+      if (++finished === WORKERS)
+        report();
+    }
+    return;
+  }
+  if (line === 'checkmate' || line === 'stalemate') {
+    w.moves = [];
+    play(w);
+  }
+  else if (/^([a-h][1-8][a-h][1-8][qrbn]? ?)+$/.test(line)) {
+    const legal = line.split(' ');
+    if (w.moves.length >= MAX_PLY)
+      w.moves = [];
+    else
+      w.moves.push(legal[rand(legal.length)]);
+    play(w);
+  }
+}
+
+// is y a linear function of x over GF(2)? fit y = M x from the first samples by elimination, then check the rest
+function linear(xs, ys) {
+  const rows = [];  // [x, y] pairs reduced so that each has a distinct leading bit of x
+  let fitted = 0;
+  for (let i = 0; i < xs.length; i++) {
+    let x = xs[i], y = ys[i];
+    for (let j = 0; j < rows.length; j++) {
+      if (x & rows[j][2]) {
+        x ^= rows[j][0];
+        y ^= rows[j][1];
+      }
+    }
+    if (x) {
+      // a new independent direction, keep it with its leading bit
+      let lead = 1 << 31;
+      while (!(x & lead))
+        lead >>>= 1;
+      rows.push([x >>> 0, y >>> 0, lead >>> 0]);
+      fitted = i + 1;
+      // keep the rows reduced against the new one for a clean basis
+      for (let j = 0; j < rows.length - 1; j++)
+        if (rows[j][0] & lead) {
+          rows[j][0] = (rows[j][0] ^ x) >>> 0;
+          rows[j][1] = (rows[j][1] ^ y) >>> 0;
+        }
+    }
+    else if (y) {
+      return {linear: false, at: i + 1};  // x reduces to zero but y does not, no linear map fits
+    }
+  }
+  return {linear: true, rank: rows.length, fitted: fitted};
+}
+
+function report() {
+  const n = los.length;
+  let html = '<tr><th>check</th><th>result</th><th></th></tr>';
+  let passed = 0;
+
+  // collisions
+  let ok = collisions.length === 0;
+  html += '<tr><td>collisions</td><td class="' + (ok ? 'pass' : 'fail') + '">' + collisions.length + ' in ' + n + ' positions</td><td>'
+    + collisions.slice(0, 3).map(function(c) { return c[2] + '<br>' + c[0] + '<br>' + c[1]; }).join('<br>') + '</td></tr>';
+  passed += ok;
+
+  // linearity both ways
+  const a = linear(los, his);
+  const b = linear(his, los);
+  ok = !a.linear && !b.linear;
+  html += '<tr><td>linearity</td><td class="' + (ok ? 'pass' : 'fail') + '">'
+    + (a.linear ? 'hi IS a linear function of lo, rank ' + a.rank + ', holds for all ' + n : 'hi is not a linear function of lo, shown by position ' + a.at) + '<br>'
+    + (b.linear ? 'lo IS a linear function of hi, rank ' + b.rank + ', holds for all ' + n : 'lo is not a linear function of hi, shown by position ' + b.at)
+    + '</td><td>' + (ok ? 'the two halves are independent, 64 bits' : 'one half is redundant, the key is 32 bits') + '</td></tr>';
+  passed += ok;
+
+  // bit balance
+  const ones = new Float64Array(64);
+  for (let i = 0; i < n; i++)
+    for (let bit = 0; bit < 32; bit++) {
+      ones[bit] += (los[i] >>> bit) & 1;
+      ones[32 + bit] += (his[i] >>> bit) & 1;
+    }
+  let worst = 0, worstBit = 0;
+  for (let bit = 0; bit < 64; bit++) {
+    const d = Math.abs(ones[bit] / n - 0.5);
+    if (d > worst) {
+      worst = d;
+      worstBit = bit;
+    }
+  }
+  const sd = 0.5 / Math.sqrt(n);
+  ok = worst < 4 * sd;
+  html += '<tr><td>bit balance</td><td class="' + (ok ? 'pass' : 'fail') + '">worst bit ' + worstBit + ' at ' + (50 + 100 * (ones[worstBit] / n - 0.5)).toFixed(2)
+    + '%</td><td>' + (worst / sd).toFixed(1) + ' standard deviations from 50%, limit 4</td></tr>';
+  passed += ok;
+
+  // slot spread over the low bits
+  const buckets = new Float64Array(SLOTS);
+  for (let i = 0; i < n; i++)
+    buckets[los[i] & (SLOTS - 1)]++;
+  let chi = 0;
+  const expect = n / SLOTS;
+  for (let i = 0; i < SLOTS; i++)
+    chi += (buckets[i] - expect) * (buckets[i] - expect) / expect;
+  // chi square with SLOTS - 1 degrees of freedom has mean SLOTS - 1 and sd sqrt(2 (SLOTS - 1))
+  const z = (chi - (SLOTS - 1)) / Math.sqrt(2 * (SLOTS - 1));
+  ok = Math.abs(z) < 4;
+  html += '<tr><td>slot spread</td><td class="' + (ok ? 'pass' : 'fail') + '">chi square ' + chi.toFixed(0) + ' over ' + SLOTS + ' slots</td><td>'
+    + z.toFixed(1) + ' standard deviations from uniform, limit 4</td></tr>';
+  passed += ok;
+
+  results.innerHTML = html;
+  progress.textContent = total + ' positions, ' + n + ' distinct';
+  summary.textContent = passed + ' of 4 checks passed';
+}
+
+for (let i = 0; i < WORKERS; i++) {
+  const w = {worker: new Worker('../naddu.js'), moves: [], count: 0};
+  w.worker.onmessage = function(e) { onMessage(w, e.data); };
+  play(w);
+}
+</script>
+
+</body>
+</html>

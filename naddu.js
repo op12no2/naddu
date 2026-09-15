@@ -56,6 +56,8 @@ class Pos {
 
   constructor() {
     this.board = new Uint8Array(128);
+    this.list = new Uint8Array(32);   // piece lists, the squares of white's pieces from 0, black's from 16
+    this.count = new Uint8Array(2);   // how many in each, a piece's slot is kept at board[sq | 8], see listAdd
     this.kings = new Uint8Array(2);
     this.ep = 0;
     this.rights = 0;
@@ -68,6 +70,8 @@ class Pos {
 
 function posClear(pos) {
   pos.board.fill(0);
+  pos.list.fill(0);
+  pos.count.fill(0);
   pos.kings.fill(0);
   pos.ep = 0;
   pos.rights = 0;
@@ -79,6 +83,8 @@ function posClear(pos) {
 
 function posSet(pos, other) {
   pos.board.set(other.board);
+  pos.list.set(other.list);
+  pos.count.set(other.count);
   pos.kings.set(other.kings);
   pos.ep = other.ep;
   pos.rights = other.rights;
@@ -86,6 +92,31 @@ function posSet(pos, other) {
   pos.hashLo = other.hashLo;
   pos.hashHi = other.hashHi;
   pos.hmc = other.hmc;
+}
+
+// piece lists https://www.chessprogramming.org/Piece-Lists
+// the generators and the eval walk them instead of the board; the slot of the piece on sq is at
+// board[sq | 8], the off board twin of sq in 0x88, so it is copied with the board in posSet
+function listAdd(pos, sq) {
+  const c = pos.board[sq] >> 3;
+  const i = pos.count[c]++;
+  pos.list[(c << 4) + i] = sq;
+  pos.board[sq | 8] = i;
+}
+
+function listMove(pos, from, to, c) {
+  const i = pos.board[from | 8];
+  pos.list[(c << 4) + i] = to;
+  pos.board[to | 8] = i;
+}
+
+// the last entry of the list takes the slot of the piece on sq
+function listRemove(pos, sq, c) {
+  const i = pos.board[sq | 8];
+  const last = --pos.count[c];
+  const lastSq = pos.list[(c << 4) + last];
+  pos.list[(c << 4) + i] = lastSq;
+  pos.board[lastSq | 8] = i;
 }
 
 let positionSet = 0; // so go can init to startpos if the user forgets
@@ -121,6 +152,11 @@ function position(fen, moves) {
     }
   }
 
+  for (let sq = 0; sq < 128; sq++) {
+    if (!(sq & 0x88) && pos.board[sq])
+      listAdd(pos, sq);
+  }
+
   pos.stm = (parts[1] === 'w') ? WHITE : BLACK;
 
   const castling = parts[2] || '-';
@@ -153,6 +189,32 @@ function position(fen, moves) {
   historyClear();
   killersClear();
 
+}
+
+// the position as a fen, without the move counters
+function posFen(pos) {
+  const pieces = '.PNBRQK..pnbrqk';
+  let fen = '';
+  for (let rank = 7; rank >= 0; rank--) {
+    let empty = 0;
+    for (let file = 0; file < 8; file++) {
+      const piece = pos.board[rank * 16 + file];
+      if (!piece) {
+        empty++;
+        continue;
+      }
+      fen += (empty ? empty : '') + pieces[piece];
+      empty = 0;
+    }
+    fen += (empty ? empty : '') + (rank ? '/' : '');
+  }
+  let rights = '';
+  if (pos.rights & RIGHTS_K) rights += 'K';
+  if (pos.rights & RIGHTS_Q) rights += 'Q';
+  if (pos.rights & RIGHTS_k) rights += 'k';
+  if (pos.rights & RIGHTS_q) rights += 'q';
+  const ep = pos.ep ? String.fromCharCode(97 + (pos.ep & 7)) + ((pos.ep >> 4) + 1) : '-';
+  return fen + (pos.stm ? ' b ' : ' w ') + (rights || '-') + ' ' + ep;
 }
 
 function printBoard() {
@@ -635,12 +697,13 @@ function genCaptures(node) {
 
   let numMoves = node.numMoves;
 
-  for (let sq = 0; sq < 128; sq++) {
-    if (sq & 0x88) continue;
+  const list = pos.list;
+  const base = stm << 1;  // 0 or 16
+  const n = pos.count[stm >> 3];
 
+  for (let i = 0; i < n; i++) {
+    const sq = list[base + i];
     const piece = board[sq];
-    if (!piece) continue;
-    if ((piece & BLACK) !== stm) continue;
 
     const type = piece & 7;
 
@@ -761,12 +824,13 @@ function genQuiets(node) {
 
   let numMoves = node.numMoves;
 
-  for (let sq = 0; sq < 128; sq++) {
-    if (sq & 0x88) continue;
+  const list = pos.list;
+  const base = stm << 1;  // 0 or 16
+  const n = pos.count[stm >> 3];
 
+  for (let i = 0; i < n; i++) {
+    const sq = list[base + i];
     const piece = board[sq];
-    if (!piece) continue;
-    if ((piece & BLACK) !== stm) continue;
 
     const type = piece & 7;
 
@@ -1084,6 +1148,55 @@ function moveIsProbablyLegal(node, move) {
   if (target && (target & BLACK) === stm)
     return 0;
 
+  // the flags must fit the position too: a hash collision hands back a move made for another position,
+  // and playing a phantom en passant or castling move would corrupt the piece lists
+  const type = piece & 7;
+  const flags = move & MOVE_EXTRA_MASK;
+  if (type === PAWN) {
+    const dir = stm ? -16 : 16;
+    const last = stm ? 0 : 7;
+    if (to === from + dir) {
+      if (target || (flags & ~MOVE_PROMO_MASK))
+        return 0;
+    }
+    else if (to === from + 2 * dir) {
+      if (target || board[from + dir] || flags !== MOVE_FLAG_EPMAKE)
+        return 0;
+    }
+    else if (to !== from + dir - 1 && to !== from + dir + 1) {
+      return 0;
+    }
+    else if (flags & MOVE_FLAG_EPCAPTURE) {
+      if (to !== pos.ep)
+        return 0;
+    }
+    else if (!target) {
+      return 0;
+    }
+    if ((move & MOVE_PROMO_MASK) ? (to >> 4) !== last : (to >> 4) === last)
+      return 0;
+  }
+  else if (flags & (MOVE_FLAG_KCASTLE | MOVE_FLAG_QCASTLE)) {
+    const home = stm ? 0x74 : 0x04;
+    const nstm = stm ^ BLACK;
+    if (type !== KING || from !== home || isAttacked(pos, home, nstm))
+      return 0;
+    if (flags & MOVE_FLAG_KCASTLE) {
+      if (to !== home + 2 || !(pos.rights & (stm ? RIGHTS_k : RIGHTS_K)) || board[home + 1] || board[home + 2]
+          || board[home + 3] !== (ROOK | stm) || isAttacked(pos, home + 1, nstm))
+        return 0;
+    }
+    else if (to !== home - 2 || !(pos.rights & (stm ? RIGHTS_q : RIGHTS_Q)) || board[home - 1] || board[home - 2] || board[home - 3]
+          || board[home - 4] !== (ROOK | stm) || isAttacked(pos, home - 1, nstm))
+      return 0;
+  }
+  else if (flags & (MOVE_FLAG_EPCAPTURE | MOVE_FLAG_EPMAKE | MOVE_PROMO_MASK)) {
+    return 0;
+  }
+  else if ((type === KING) !== !!(flags & MOVE_FLAG_KING)) {
+    return 0;
+  }
+
   return move;
 }
 
@@ -1155,6 +1268,11 @@ function makeMove(move, pos) {
     hi ^= zobPiecesHi[captured][to];
   }
 
+  // the victim leaves its list before the mover takes the square
+  if (captured)
+    listRemove(pos, to, captured >> 3);
+  listMove(pos, from, to, piece >> 3);
+
   pos.board[to] = piece;
   pos.board[from] = 0;
   pos.ep = 0;
@@ -1184,6 +1302,7 @@ function makeMove(move, pos) {
       const capPiece = pos.board[capSq];
       lo ^= zobPiecesLo[capPiece][capSq];
       hi ^= zobPiecesHi[capPiece][capSq];
+      listRemove(pos, capSq, capPiece >> 3);
       pos.board[capSq] = 0;
       lo ^= pieceZobLo[to];
       hi ^= pieceZobHi[to];
@@ -1196,6 +1315,7 @@ function makeMove(move, pos) {
       const rookZobHi = zobPiecesHi[rook];
       lo ^= rookZobLo[to + 1] ^ rookZobLo[to - 1];
       hi ^= rookZobHi[to + 1] ^ rookZobHi[to - 1];
+      listMove(pos, to + 1, to - 1, rook >> 3);
       pos.board[to - 1] = rook;
       pos.board[to + 1] = 0;
       lo ^= pieceZobLo[to];
@@ -1209,6 +1329,7 @@ function makeMove(move, pos) {
       const rookZobHi = zobPiecesHi[rook];
       lo ^= rookZobLo[to - 2] ^ rookZobLo[to + 1];
       hi ^= rookZobHi[to - 2] ^ rookZobHi[to + 1];
+      listMove(pos, to - 2, to + 1, rook >> 3);
       pos.board[to + 1] = rook;
       pos.board[to - 2] = 0;
       lo ^= pieceZobLo[to];
@@ -1406,63 +1527,56 @@ function evaluate(node) {
 
   counts.fill(0);
 
-  let nw = 0
-  let nb = 0;
+  const list = pos.list;
+  const nw = pos.count[0];  // number of white pieces on board
+  const nb = pos.count[1];
 
   let mgW = 0, mgB = 0, egW = 0, egB = 0;
   let phase = 0;
 
-  for (let sq = 0; sq < 128; sq++) {
-
-    if (sq & 0x88)
-      continue;
-
+  for (let i = 0; i < nw; i++) {
+    const sq = list[i];
     const piece = board[sq];
-    if (!piece)
-      continue;
-
-    counts[piece] += 1;
-
     const type = piece & 7;
-    const col = piece & BLACK;
-
+    counts[piece] += 1;
     phase += PHASE[type];
+    mgW += MGW[type][sq];
+    egW += EGW[type][sq];
+  }
 
-    if (col) { // black
-      nb++; // number of black pieces on board
-      mgB += MGB[type][sq];
-      egB += EGB[type][sq];
-    }
-    else {
-      nw++; // number of white pieces on board
-      mgW += MGW[type][sq];
-      egW += EGW[type][sq];
-    }
+  for (let i = 0; i < nb; i++) {
+    const sq = list[16 + i];
+    const piece = board[sq];
+    const type = piece & 7;
+    counts[piece] += 1;
+    phase += PHASE[type];
+    mgB += MGB[type][sq];
+    egB += EGB[type][sq];
   }
 
   // king distance terms for N B R Q, a second walk so the loop above costs nothing while they are off
   if (KING_TERMS) {
     const wk = pos.kings[0];
     const bk = pos.kings[1];
-    for (let sq = 0; sq < 128; sq++) {
-      if (sq & 0x88)
-        continue;
-      const piece = board[sq];
-      const type = piece & 7;
+    for (let i = 0; i < nw; i++) {
+      const sq = list[i];
+      const type = board[sq] & 7;
       if (type < KNIGHT || type > QUEEN)
         continue;
-      if (piece & BLACK) {
-        const own = 7 - DIST[0x77 + sq - bk];
-        const enemy = 7 - DIST[0x77 + sq - wk];
-        mgB += CUDDLE_MG[type] * own + SMOTHER_MG[type] * enemy;
-        egB += CUDDLE_EG[type] * own + SMOTHER_EG[type] * enemy;
-      }
-      else {
-        const own = 7 - DIST[0x77 + sq - wk];
-        const enemy = 7 - DIST[0x77 + sq - bk];
-        mgW += CUDDLE_MG[type] * own + SMOTHER_MG[type] * enemy;
-        egW += CUDDLE_EG[type] * own + SMOTHER_EG[type] * enemy;
-      }
+      const own = 7 - DIST[0x77 + sq - wk];
+      const enemy = 7 - DIST[0x77 + sq - bk];
+      mgW += CUDDLE_MG[type] * own + SMOTHER_MG[type] * enemy;
+      egW += CUDDLE_EG[type] * own + SMOTHER_EG[type] * enemy;
+    }
+    for (let i = 0; i < nb; i++) {
+      const sq = list[16 + i];
+      const type = board[sq] & 7;
+      if (type < KNIGHT || type > QUEEN)
+        continue;
+      const own = 7 - DIST[0x77 + sq - bk];
+      const enemy = 7 - DIST[0x77 + sq - wk];
+      mgB += CUDDLE_MG[type] * own + SMOTHER_MG[type] * enemy;
+      egB += CUDDLE_EG[type] * own + SMOTHER_EG[type] * enemy;
     }
   }
 
@@ -2787,6 +2901,10 @@ function execTokens(tokens) {
       printBoard();
       break;
 
+    case 'hash':  // the two 32 bit halves of the position's hash and its fen, for examples/hash.html
+      uciWrite('hash ' + nodes[0].pos.hashLo.toString(16) + ' ' + nodes[0].pos.hashHi.toString(16) + ' ' + posFen(nodes[0].pos));
+      break;
+
     case 'moves':
     case 'l':
       printMoves();
@@ -2860,6 +2978,7 @@ function execTokens(tokens) {
       uciWrite('                            search using the game clock');
       uciWrite('board (b)                   show the current position');
       uciWrite('moves (l)                   list the legal moves, or checkmate/stalemate if there are none');
+      uciWrite('hash                        the two halves of the position hash and its fen');
       uciWrite('eval (e)                    show the static eval of the current position');
       uciWrite('eval (e) verbose (v)        show the eval itemised by term, from the white side');
       uciWrite('pst                         show the piece square tables, wn mg etc, a1 to h8');
