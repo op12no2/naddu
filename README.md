@@ -46,7 +46,6 @@ Try this example here: https://op12no2.github.io/naddu/examples/hello_world.html
 - [sts](https://op12no2.github.io/naddu/examples/sts.html) - the 1500 position Strategic Test Suite, one worker per theme, to a fixed depth or time, scored overall and per theme.
 - [pst](https://op12no2.github.io/naddu/examples/pst.html) - the piece square tables as heat maps on one shared colour scale.
 - [taper](https://op12no2.github.io/naddu/examples/taper.html) - one board per piece with a phase slider, showing the blended values the eval really uses.
-- [values](https://op12no2.github.io/naddu/examples/values.html) - effective piece values, material plus the mean table bonus, by phase.
 - [parallel](https://op12no2.github.io/naddu/examples/parallel.html) - workers share out the root moves of one position and search them together.
 
 ## Command line
