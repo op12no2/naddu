@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scaling</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 70em;
+    margin: 2em auto;
+    padding: 0 1em;
+  }
+  #controls label { margin-right: 1em; }
+  #chart {
+    width: 100%;
+    max-width: 800px;
+    border: 1px solid #ddd;
+    margin: 1em 0;
+  }
+  table {
+    border-collapse: collapse;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 14px;
+  }
+  td, th {
+    text-align: right;
+    padding: 0.3em 1em 0.3em 0;
+  }
+  #status, #summary { font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>Scaling</h1>
+
+<p>How many workers does your browser really give you? The root moves of a position are shared out between 1, 2, 4,
+8 and 16 workers in turn, each worker searching its moves to the chosen depth, as on the
+<a href="parallel.html">parallel</a> page. The wall time for each run gives the total nodes per second and the
+speedup over one worker, plotted against the ideal. The curve flattens when the workers outnumber the cores the
+browser will run at once, and a little before that because the root moves are not equal work, so a few slow moves
+at the end leave the other workers idle. Browsers report a core count which is shown for comparison.</p>
+
+<p id="controls">
+  <label>Position <select id="preset"></select></label>
+  <label>Depth <select id="depth"></select></label>
+  <button id="start">Start</button>
+</p>
+
+<svg id="chart" viewBox="0 0 800 300"></svg>
+
+<p id="status"></p>
+
+<table id="results"></table>
+
+<p id="summary"></p>
+
+<script>
+const PRESETS = [
+  ['Kiwipete',       'r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1'],
+  ['Start position', 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'],
+  ['BK.05 (Nd5 or a4)', 'r1b2rk1/2q1b1pp/p2ppn2/1p6/3QP3/1BN1B3/PPP3PP/R4RK1 w - - 0 1']
+];
+const COUNTS = [1, 2, 4, 8, 16];
+
+const chart = document.getElementById('chart');
+const status = document.getElementById('status');
+const results = document.getElementById('results');
+const summary = document.getElementById('summary');
+const presetEl = document.getElementById('preset');
+const depthEl = document.getElementById('depth');
+
+let fen = '';
+let legal = [];
+let run = 0;        // index into COUNTS
+let workers = [];
+let queue = [];
+let busy = 0;
+let nodes = 0;
+let t0 = 0;
+const runs = [];    // [workers, ms, nodes] per finished run
+
+for (let i = 0; i < PRESETS.length; i++) {
+  const opt = document.createElement('option');
+  opt.value = i;
+  opt.textContent = PRESETS[i][0];
+  presetEl.appendChild(opt);
+}
+for (let d = 4; d <= 14; d++) {
+  const opt = document.createElement('option');
+  opt.textContent = d;
+  if (d === 9)
+    opt.selected = true;
+  depthEl.appendChild(opt);
+}
+
+function drawChart() {
+  const maxN = COUNTS[COUNTS.length - 1];
+  const x = function(n) { return 40 + (n - 1) / (maxN - 1) * 740; };
+  const y = function(s) { return 270 - (s - 1) / (maxN - 1) * 250; };
+  let html = '<line x1="40" y1="20" x2="40" y2="270" stroke="#999"/><line x1="40" y1="270" x2="780" y2="270" stroke="#999"/>'
+    + '<line x1="' + x(1) + '" y1="' + y(1) + '" x2="' + x(maxN) + '" y2="' + y(maxN) + '" stroke="#ccc" stroke-dasharray="4"/>'
+    + '<text x="6" y="24" font-size="11">x' + maxN + '</text><text x="6" y="274" font-size="11">x1</text>';
+  for (let i = 0; i < COUNTS.length; i++)
+    html += '<text x="' + (x(COUNTS[i]) - 8) + '" y="290" font-size="11">' + COUNTS[i] + '</text>';
+  const cores = navigator.hardwareConcurrency;
+  if (cores && cores <= maxN)
+    html += '<line x1="' + x(cores) + '" y1="20" x2="' + x(cores) + '" y2="270" stroke="#c93" stroke-dasharray="2"/>'
+      + '<text x="' + (x(cores) + 4) + '" y="32" font-size="11" fill="#c93">' + cores + ' cores reported</text>';
+  let pts = '';
+  for (let i = 0; i < runs.length; i++) {
+    const s = runs[0][1] / runs[i][1];
+    pts += x(runs[i][0]) + ',' + y(Math.max(1, s)) + ' ';
+    html += '<circle cx="' + x(runs[i][0]) + '" cy="' + y(Math.max(1, s)) + '" r="4" fill="#36c"/>';
+  }
+  html += '<polyline points="' + pts + '" fill="none" stroke="#36c" stroke-width="1.5"/>';
+  chart.innerHTML = html;
+}
+
+function showTable() {
+  let html = '<tr><th>workers</th><th>ms</th><th>nodes</th><th>nps</th><th>speedup</th></tr>';
+  for (let i = 0; i < runs.length; i++) {
+    const r = runs[i];
+    html += '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td><td>' + r[2] + '</td><td>' + Math.round(r[2] / r[1] * 1000)
+      + '</td><td>x' + (runs[0][1] / r[1]).toFixed(2) + '</td></tr>';
+  }
+  results.innerHTML = html;
+}
+
+// hand the next root move to a worker
+function give(w) {
+  w.postMessage('position fen ' + fen + ' moves ' + queue.shift());
+  w.postMessage('go depth ' + (parseInt(depthEl.value) - 1));
+}
+
+function onWorker(w, line) {
+  if (line.startsWith('info ')) {
+    const m = line.match(/ nodes (\d+)/);
+    if (m)
+      w.lastNodes = parseInt(m[1]);
+  }
+  else if (line.startsWith('bestmove ')) {
+    nodes += w.lastNodes;
+    if (queue.length)
+      give(w);
+    else if (--busy === 0)
+      finishRun();
+  }
+}
+
+function startRun() {
+  const n = COUNTS[run];
+  status.textContent = n + ' worker' + (n > 1 ? 's' : '') + ' ...';
+  queue = legal.slice();
+  nodes = 0;
+  busy = 0;
+  workers = [];
+  for (let i = 0; i < n; i++) {
+    const w = new Worker('../naddu.js');
+    w.lastNodes = 0;
+    w.onmessage = function(e) { onWorker(w, e.data); };
+    w.postMessage('ucinewgame');
+    workers.push(w);
+  }
+  t0 = performance.now();
+  // busy counts the workers with a search in flight
+  for (let i = 0; i < n && queue.length; i++) {
+    busy++;
+    give(workers[i]);
+  }
+}
+
+function finishRun() {
+  const ms = Math.round(performance.now() - t0);
+  for (let i = 0; i < workers.length; i++)
+    workers[i].terminate();
+  runs.push([COUNTS[run], ms, nodes]);
+  drawChart();
+  showTable();
+  if (++run < COUNTS.length) {
+    startRun();
+    return;
+  }
+  let best = 0;
+  for (let i = 1; i < runs.length; i++)
+    if (runs[i][1] < runs[best][1])
+      best = i;
+  status.textContent = 'done';
+  summary.textContent = runs.length + ' of ' + COUNTS.length + ' runs, ' + legal.length + ' root moves, best x' + (runs[0][1] / runs[best][1]).toFixed(2)
+    + ' with ' + runs[best][0] + ' workers, browser reports ' + (navigator.hardwareConcurrency || '?') + ' cores';
+}
+
+function start() {
+  for (let i = 0; i < workers.length; i++)
+    workers[i].terminate();
+  runs.length = 0;
+  run = 0;
+  results.innerHTML = '';
+  summary.textContent = '';
+  fen = PRESETS[presetEl.value][1];
+  drawChart();
+  // one worker for the move list, then the runs
+  const main = new Worker('../naddu.js');
+  main.onmessage = function(e) {
+    if (/^([a-h][1-8][a-h][1-8][qrbn]? ?)+$/.test(e.data)) {
+      legal = e.data.split(' ');
+      main.terminate();
+      startRun();
+    }
+  };
+  main.postMessage('position fen ' + fen);
+  main.postMessage('moves');
+}
+
+document.getElementById('start').onclick = start;
+
+start();
+</script>
+
+</body>
+</html>
