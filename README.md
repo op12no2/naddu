@@ -274,7 +274,10 @@ move and uses the whole increment.
 `eval verbose` or `e v` shows where the eval comes from, handy after changing tables or features. Each term is given
 for white and black in the middlegame and endgame, then the difference from white's side, then the phase, the blend of
 the two differences at that phase, the tempo for the side to move and the eval itself, which is the blend from the
-side to move's view plus the tempo. A draw by material is reported and gives 0. For K+Q v K:-
+side to move's view plus the tempo. A draw by material is reported and gives 0. The smother and cuddle rows are
+zero unless the features are set; turned on they generally cost a little Elo, a knight heading for the king is not
+always the best placed knight, but they pay for it with a recognisable style of play, an engine that goes for the
+king or one that keeps its pieces at home, which is what they are for. For K+Q v K:-
 
 ```
 term      white mg white eg black mg black eg       mg       eg
