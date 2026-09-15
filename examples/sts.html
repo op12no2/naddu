@@ -31,16 +31,17 @@
 <h1>Strategic Test Suite</h1>
 
 <p>The 1500 positions of the <a href="https://www.chessprogramming.org/Strategic_Test_Suite">Strategic Test Suite</a>,
-15 themes of 100 positions, each searched for a fixed time. Every position has up to ten candidate moves
-scored 1 to 100, the best move scoring 100. The engine gets the score of the move it picks, or 0 if its move is
-not a candidate, so the maximum is 10000 per theme and 150000 overall. Each theme runs in its own worker which is
-handed its hundred positions up front, so the fifteen rows fill in together and the suite takes a hundred searches' worth of time, about 2 seconds at the
-default 10 ms and under two minutes at one second a position. With fewer than fifteen cores the workers share
-the CPU and each search gets less than it asked for. Positions where the engine's move is not a candidate at all
-are listed under the table.</p>
+15 themes of 100 positions, each searched to a fixed depth or for a fixed time. Every position has up to ten
+candidate moves scored 1 to 100, the best move scoring 100. The engine gets the score of the move it picks, or 0
+if its move is not a candidate, so the maximum is 10000 per theme and 150000 overall. Each theme runs in its own
+worker which is handed its hundred positions up front, so the fifteen rows fill in together, each at the pace its
+positions allow. The default depth 8 takes a few seconds and the result does not depend on the machine, unlike
+a fixed time where with fewer than fifteen cores the workers share the CPU and each search gets less than it asked
+for. Positions where the engine's move is not a candidate at all are listed under the table.</p>
 
 <p>
-  <label>Search time <input id="movetime" type="number" value="10" min="10" step="100" style="width:6em"> ms</label>
+  <label>Search <select id="mode"><option value="depth">depth</option><option value="movetime">movetime ms</option></select>
+  <input id="limit" type="number" value="8" min="1" style="width:6em"></label>
   <button id="start">Start</button>
 </p>
 
@@ -1592,11 +1593,11 @@ let total = 0;
 // give a worker its whole theme up front, the searches run back to back and the
 // bestmoves come back in order
 function queue(theme) {
-  const movetime = document.getElementById('movetime').value;
+  const go = 'go ' + document.getElementById('mode').value + ' ' + document.getElementById('limit').value;
   for (let i = 0; i < 100; i++) {
     workers[theme].postMessage('ucinewgame');
     workers[theme].postMessage('position fen ' + tests[theme * 100 + i][0]);
-    workers[theme].postMessage('go movetime ' + movetime);
+    workers[theme].postMessage(go);
   }
 }
 
