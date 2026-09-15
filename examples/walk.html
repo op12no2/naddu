@@ -449,9 +449,12 @@ probe.onmessage = function(e) {
   }
   catch (e) {
   }
+  cand = copy(best);
+  change = [-1, -1];
+  showParams();
+  status.textContent = 'press Start';
   document.getElementById('start').onclick = start;
   document.getElementById('reset').onclick = resetBest;
-  start();
 };
 probe.postMessage('search');
 probe.postMessage('isready');
