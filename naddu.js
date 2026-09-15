@@ -2465,9 +2465,13 @@ function uciWrite(data) {
     postMessage(String(data));
 }
 
+// in Node close readline and let the process exit on its own, process.exit()
+// deadlocks in Node's shutdown now and then (1 in 5 on Node 24 under WSL2)
+let rl = null;
+
 function uciQuit() {
   if (IS_NODE)
-    process.exit(0);
+    rl.close();
   else
     close();
 }
@@ -2481,20 +2485,14 @@ historyInitOnce();
 if (IS_NODE) {
 
   const readline = require('readline');
-  const rl = readline.createInterface({
+  rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
     terminal: false
   });
 
   rl.on('line', function(line) {
-    const cmd = line.trim().toLowerCase();
-    if (cmd === 'quit' || cmd === 'q') {
-      uciQuit();
-    }
-    else {
-      execString(line);
-    }
+    execString(line);
   });
 
   // If command-line arguments provided, execute them and exit
@@ -2503,7 +2501,7 @@ if (IS_NODE) {
     for (const cmd of commands) {
       execString(cmd);
     }
-    process.exit(0);
+    uciQuit();
   }
 }
 else {
