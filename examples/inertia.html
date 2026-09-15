@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inertia</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 70em;
+    margin: 2em auto;
+    padding: 0 1em;
+  }
+  #controls label { margin-right: 1em; }
+  table {
+    border-collapse: collapse;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 14px;
+    margin: 1em 0;
+  }
+  td, th {
+    text-align: right;
+    padding: 0.3em 1.2em 0.3em 0;
+    white-space: nowrap;
+  }
+  td:first-child, th:first-child { text-align: left; }
+  mark { background: #fd6; }
+  .up { color: #070; }
+  .down { color: #a00; }
+  #progress { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px; }
+  #summary { font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>Inertia</h1>
+
+<p>How much does each number matter? Every value of every search parameter, or every eval feature other than the
+piece square tables, is nudged down and then up by a percentage of its default, at least 1, and the
+<a href="sts.html">Strategic Test Suite</a> is run each time. The table shows the change in the STS score against a
+baseline run with the defaults, and the change in the nodes searched. At a fixed depth the engine is deterministic,
+so every difference is real however small, but anything that prunes less looks better at a fixed depth simply
+because it searches more, so read the score change together with the node change. A value that loses in both
+directions sits in a dip, that is the inertia. A value that gains in one direction is worth pointing the
+<a href="walk.html">walk</a> at. STS measures move choice in quiet positions, not strength, so treat it as a map
+rather than a verdict. The time list never moves here, it only applies with a game clock. The positions are shared
+with the sts page through <code>sts.js</code>.</p>
+
+<p id="controls">
+  <label>Set <select id="mode"><option value="search">search</option><option value="eval">eval</option></select></label>
+  <label>Search <select id="limit"><option value="depth">depth</option><option value="movetime">movetime ms</option></select>
+  <input id="amount" type="number" value="6" min="1" style="width:5em"></label>
+  <label>Delta <input id="delta" type="number" value="10" min="1" style="width:4em"> %</label>
+  <label>Order <select id="order"><option value="listed">as listed</option><option value="effect">by effect</option></select></label>
+  <button id="start">Start</button>
+</p>
+
+<p id="progress"></p>
+
+<table id="results"></table>
+
+<p id="summary"></p>
+
+<script src="sts.js"></script>
+<script>
+const PROBES = {
+  search: ['search'],
+  eval: ['feature tempo', 'feature phase', 'feature shelter', 'feature mopup', 'feature smother mg', 'feature smother eg',
+          'feature cuddle mg', 'feature cuddle eg', 'feature mat mg', 'feature mat eg']
+};
+
+const progress = document.getElementById('progress');
+const results = document.getElementById('results');
+const summary = document.getElementById('summary');
+const modeEl = document.getElementById('mode');
+const orderEl = document.getElementById('order');
+
+let defaults = [];   // [{cmd, name, values}] from the engine
+let rows = [];       // one per value: {i, j, step, minus: [score, nodes], plus: [score, nodes]}
+let runs = [];       // the runs to do: {lines, row, side} with the baseline first
+let run = 0;
+let baseline = null;  // [score, nodes]
+let workers = [];
+let done = 0;        // positions finished in the current run
+let score = 0;
+let nodes = 0;
+let running = false;
+
+function lines(p) {
+  const out = [];
+  for (let i = 0; i < p.length; i++)
+    out.push(p[i].cmd + ' ' + p[i].name + ' ' + p[i].values.join(' '));
+  return out;
+}
+
+function pct(v, base) {
+  const d = (v - base) / base * 100;
+  return '<span class="' + (d > 0 ? 'up' : d < 0 ? 'down' : '') + '">' + (d > 0 ? '+' : '') + d.toFixed(2) + '%</span>';
+}
+
+function effect(r) {
+  let e = 0;
+  if (r.minus)
+    e = Math.max(e, Math.abs(r.minus[0] - baseline[0]));
+  if (r.plus)
+    e = Math.max(e, Math.abs(r.plus[0] - baseline[0]));
+  return e;
+}
+
+function showTable() {
+  const order = rows.slice();
+  if (orderEl.value === 'effect' && baseline)
+    order.sort(function(a, b) { return effect(b) - effect(a); });
+  let html = '<tr><th>parameter</th><th>value</th><th>step</th><th>minus</th><th>plus</th><th>nodes minus</th><th>nodes plus</th></tr>';
+  for (let k = 0; k < order.length; k++) {
+    const r = order[k];
+    const p = defaults[r.i];
+    const v = p.values.slice();
+    v[r.j] = '<mark>' + v[r.j] + '</mark>';
+    html += '<tr><td>' + p.name + ' ' + v.join(' ') + '</td><td>' + p.values[r.j] + '</td><td>' + r.step + '</td><td>'
+      + (r.minus ? pct(r.minus[0], baseline[0]) : '') + '</td><td>' + (r.plus ? pct(r.plus[0], baseline[0]) : '') + '</td><td>'
+      + (r.minus ? pct(r.minus[1], baseline[1]) : '') + '</td><td>' + (r.plus ? pct(r.plus[1], baseline[1]) : '') + '</td></tr>';
+  }
+  results.innerHTML = html;
+}
+
+// hand a theme's 100 positions to its worker with the run's parameter lines first
+function queue(theme) {
+  const w = workers[theme];
+  const go = 'go ' + document.getElementById('limit').value + ' ' + document.getElementById('amount').value;
+  const l = runs[run].lines;
+  for (let i = 0; i < l.length; i++)
+    w.postMessage(l[i]);
+  for (let i = 0; i < 100; i++) {
+    w.postMessage('ucinewgame');
+    w.postMessage('position fen ' + tests[theme * 100 + i][0]);
+    w.postMessage(go);
+  }
+}
+
+function startRun() {
+  done = 0;
+  score = 0;
+  nodes = 0;
+  for (let theme = 0; theme < themes.length; theme++) {
+    workers[theme].index = 0;
+    queue(theme);
+  }
+}
+
+function finishRun() {
+  const r = runs[run];
+  if (r.row === null)
+    baseline = [score, nodes];
+  else
+    r.row[r.side] = [score, nodes];
+  showTable();
+  if (++run < runs.length) {
+    progress.textContent = 'run ' + (run + 1) + ' of ' + runs.length + ', baseline ' + baseline[0] + ' with ' + baseline[1] + ' nodes';
+    startRun();
+    return;
+  }
+  running = false;
+  for (let i = 0; i < workers.length; i++)
+    workers[i].terminate();
+  let best = rows[0];
+  for (let k = 1; k < rows.length; k++)
+    if (effect(rows[k]) > effect(best))
+      best = rows[k];
+  progress.textContent = 'done';
+  summary.textContent = runs.length + ' of ' + runs.length + ' runs, baseline ' + baseline[0] + ', biggest effect ' + defaults[best.i].name
+    + ' value ' + defaults[best.i].values[best.j] + ' at ' + (effect(best) / baseline[0] * 100).toFixed(2) + '%';
+}
+
+function onMessage(theme, line) {
+  if (!running)
+    return;
+  if (line.startsWith('info ')) {
+    const m = line.match(/ nodes (\d+)/);
+    if (m)
+      workers[theme].lastNodes = parseInt(m[1]);
+    return;
+  }
+  if (!line.startsWith('bestmove '))
+    return;
+  const move = line.split(' ')[1];
+  const test = tests[theme * 100 + workers[theme].index++];
+  const pairs = test[1].split(' ');
+  for (let i = 0; i < pairs.length; i++)
+    if (pairs[i].startsWith(move + '='))
+      score += parseInt(pairs[i].substr(move.length + 1));
+  nodes += workers[theme].lastNodes;
+  if (++done === tests.length)
+    finishRun();
+}
+
+function start() {
+  for (let i = 0; i < workers.length; i++)
+    workers[i].terminate();
+  workers = [];
+  rows = [];
+  runs = [{lines: lines(defaults), row: null, side: ''}];
+  const delta = parseInt(document.getElementById('delta').value);
+  for (let i = 0; i < defaults.length; i++) {
+    for (let j = 0; j < defaults[i].values.length; j++) {
+      const step = Math.max(1, Math.round(Math.abs(defaults[i].values[j]) * delta / 100));
+      const row = {i: i, j: j, step: step, minus: null, plus: null};
+      rows.push(row);
+      for (let sign = -1; sign <= 1; sign += 2) {
+        const p = [];
+        for (let k = 0; k < defaults.length; k++)
+          p.push({cmd: defaults[k].cmd, name: defaults[k].name, values: defaults[k].values.slice()});
+        p[i].values[j] = Math.max(0, p[i].values[j] + sign * step);
+        runs.push({lines: lines(p), row: row, side: sign < 0 ? 'minus' : 'plus'});
+      }
+    }
+  }
+  run = 0;
+  baseline = null;
+  summary.textContent = '';
+  progress.textContent = 'run 1 of ' + runs.length + ', the baseline';
+  showTable();
+  for (let theme = 0; theme < themes.length; theme++) {
+    const w = new Worker('../naddu.js');
+    w.index = 0;
+    w.lastNodes = 0;
+    w.onmessage = function(e) { onMessage(theme, e.data); };
+    workers.push(w);
+  }
+  running = true;
+  startRun();
+}
+
+// the parameters and defaults come from the engine, readyok says the list is complete
+function load() {
+  running = false;
+  for (let i = 0; i < workers.length; i++)
+    workers[i].terminate();
+  workers = [];
+  defaults = [];
+  rows = [];
+  baseline = null;
+  results.innerHTML = '';
+  summary.textContent = '';
+  const probe = new Worker('../naddu.js');
+  probe.onmessage = function(e) {
+    const parts = e.data.split(' ');
+    if (parts[0] === 'search' || parts[0] === 'feature') {
+      // material prints a white and a black line, keep the white one as "mat" so both colours change together
+      if (parts[1] === 'bmat')
+        return;
+      if (parts[1] === 'wmat')
+        parts[1] = 'mat';
+      const n = parts[0] === 'feature' && (parts[2] === 'mg' || parts[2] === 'eg') ? 2 : 1;
+      const values = [];
+      for (let i = n + 1; i < parts.length; i++)
+        values.push(parseInt(parts[i]));
+      defaults.push({cmd: parts[0], name: parts.slice(1, n + 1).join(' '), values: values});
+      return;
+    }
+    if (parts[0] !== 'readyok')
+      return;
+    probe.terminate();
+    let n = 0;
+    for (let i = 0; i < defaults.length; i++)
+      n += defaults[i].values.length;
+    progress.textContent = n + ' values, ' + (2 * n + 1) + ' runs of the suite, press Start';
+  };
+  const probes = PROBES[modeEl.value];
+  for (let i = 0; i < probes.length; i++)
+    probe.postMessage(probes[i]);
+  probe.postMessage('isready');
+}
+
+document.getElementById('start').onclick = start;
+orderEl.onchange = showTable;
+modeEl.onchange = load;
+load();
+</script>
+
+</body>
+</html>
