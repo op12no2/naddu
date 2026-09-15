@@ -76,6 +76,13 @@ naddu.terminate();
 naddu = new Worker('naddu.js');
 ```
 
+## UCI options
+
+Only one so far, reported by `uci` and set with `setoption name <name> value <value>`, the name is not case sensitive:-
+
+- `Hash` - hash table size in MB, spin, default 16, min 1, max 1024. Setting it clears the table. The size is
+  rounded down to a power of two entries of 16 bytes, so 24 gives the same table as 16.
+
 ## UCI extensions
 
 Extra commands handy for web pages and testing, each has a one letter short form:-
