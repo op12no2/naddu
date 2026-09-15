@@ -91,6 +91,7 @@ Extra commands handy for web pages and testing, with any shortform in parenthsis
 - `moves` (`l`) - list the legal moves, or `checkmate` or `stalemate` if there are none.
 - `eval` (`e`) - static eval of the current position from the side to move's point of view.
 - `pst` - print, set or reset the piece square tables, see below.
+- `feature` - print, set or reset the other eval numbers, tempo, phase weights and so on, see below.
 - `perft <depth>` (`f`) - leaf node count.
 - `bench` (`h`) - search 50 positions, report nodes and nps.
 - `evaltests` (`et`) - evals of the bench positions.
