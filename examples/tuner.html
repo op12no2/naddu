@@ -69,7 +69,9 @@ standard <a href="https://www.chessprogramming.org/Texel%27s_Tuning_Method">Texe
 the eval into an expected result, the loss is the mean squared error against the actual result, and
 <a href="https://www.chessprogramming.org/Automated_Tuning#Adam">Adam</a> steps the weights down the gradient each
 epoch. Every term is linear in its weights so the gradients are exact. The phase weights and mop up are not tuned,
-mop up is carried as a constant per position. The positions are parsed and the gradients summed by a pool of
+mop up is carried as a constant per position. Material and the tables are collinear, a piece count is the sum of
+its table coefficients, so after each step each table's mean is moved into the material, which changes no eval but
+keeps the numbers readable; the shelter values are re-based the same way so a pawn in front stays at 0. The positions are parsed and the gradients summed by a pool of
 workers, each holding a share of the data, and the page never calls the engine after the start except to check
 itself.</p>
 
@@ -643,6 +645,30 @@ async function load(text) {
   startBtn.disabled = false;
 }
 
+// material and the tables are collinear, a count is the sum of that piece's 64 coefficients, so the
+// gradient splits between them at random; move each table's mean into the material, which changes
+// no eval. Likewise the four shelter multiplicities always sum to 4 per king, so a constant across
+// them is queen material in disguise; keep the pawn in front penalty at 0 as the engine does.
+function recentre() {
+  for (let piece = 0; piece < 5; piece++) {
+    for (let ph = 0; ph < 2; ph++) {
+      const off = ph * NS + piece * 64;
+      const lo = piece ? 0 : 8, hi = piece ? 64 : 56;  // pawns never stand on ranks 1 and 8
+      let mean = 0;
+      for (let i = lo; i < hi; i++)
+        mean += W[off + i];
+      mean /= hi - lo;
+      for (let i = lo; i < hi; i++)
+        W[off + i] -= mean;
+      W[ph * NS + 384 + piece] += mean;
+    }
+  }
+  const c = W[389];
+  for (let d = 0; d < 4; d++)
+    W[389 + d] -= c;
+  W[384 + 4] += 4 * c;
+}
+
 async function train() {
   running = true;
   startBtn.disabled = true;
@@ -680,6 +706,7 @@ async function train() {
     }
     for (let d = 0; d < 4; d++)  // shelter is middlegame only
       W[NS + 389 + d] = 0;
+    recentre();
     status.textContent = 'epoch ' + epoch + ' of ' + epochs + ', loss ' + losses[losses.length - 1].toFixed(5) + ', '
       + Math.round((performance.now() - t0) / epoch) + ' ms per epoch';
     draw();
