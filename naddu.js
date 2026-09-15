@@ -1602,8 +1602,15 @@ function evalInitOnce() {
 
 // print the piece square tables without material, one line per piece and phase
 // e.g. "pst n mg <64 values>" for a1 b1 ... h8 from white's side
+// then the material values, "pst mat mg <6 values>" for p n b r q k
 function printPst() {
   const names = 'pnbrqk';
+  let matMg = 'pst mat mg';
+  let matEg = 'pst mat eg';
+  for (let piece = PAWN; piece <= KING; piece++) {
+    matMg += ' ' + MAT_MG[piece];
+    matEg += ' ' + MAT_EG[piece];
+  }
   for (let piece = PAWN; piece <= KING; piece++) {
     let mg = 'pst ' + names[piece - 1] + ' mg';
     let eg = 'pst ' + names[piece - 1] + ' eg';
@@ -1616,6 +1623,8 @@ function printPst() {
     uciWrite(mg);
     uciWrite(eg);
   }
+  uciWrite(matMg);
+  uciWrite(matEg);
 }
 
 class TimeControl {
@@ -2441,7 +2450,7 @@ function execTokens(tokens) {
       uciWrite('board (b)                   show the current position');
       uciWrite('moves (l)                   list the legal moves, or checkmate/stalemate if there are none');
       uciWrite('eval (e)                    show the static eval of the current position');
-      uciWrite('pst                         show the piece square tables, a1 to h8 from the white side');
+      uciWrite('pst                         show the piece square tables, a1 to h8 from the white side, and material');
       uciWrite('perft (f) <depth>           count leaf nodes to the given depth');
       uciWrite('bench (h)                   search 50 positions and report nodes and nps');
       uciWrite('evaltests (et)              show the eval of the bench positions');
