@@ -1964,7 +1964,7 @@ function go() {
     if (tc.softTime && now() >= tc.softTime)
       break;
     // stop once a mate is found - a faster one may exist but this is more fun
-    if (score >= TT_MATE_BOUND || score <= -TT_MATE_BOUND)
+    if ((score >= TT_MATE_BOUND || score <= -TT_MATE_BOUND) && MATE - Math.abs(score) <= d)
       break;
   }
 

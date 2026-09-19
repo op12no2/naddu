@@ -6,6 +6,8 @@ It can be easily included in your web pages.
 
 All you need is `naddu.js` from the repo root.
 
+Strength is around 2500 Elo.
+
 ## Hello world
 
 ```
