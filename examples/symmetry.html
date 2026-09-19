@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eval symmetry</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 70em;
+    margin: 2em auto;
+    padding: 0 1em;
+  }
+  table {
+    border-collapse: collapse;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 13px;
+  }
+  td, th {
+    text-align: left;
+    padding: 0.2em 1em 0.2em 0;
+    white-space: nowrap;
+  }
+  #progress { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px; }
+  #summary { font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>Eval symmetry</h1>
+
+<p>A <a href="https://www.chessprogramming.org/Evaluation#Symmetry">colour flipped</a> position, the board mirrored
+top to bottom with the colours swapped and the other side to move, must get exactly the same eval, since the eval is
+from the side to move's point of view. If it does not, some term is treating white and black differently, and that is
+the kind of bug nothing else notices. Eight workers each play random games, and at every ply they ask for the eval of
+the position and of its flip. Left to right mirroring is not tested because the piece square tables are not
+symmetric that way. Any position that fails is listed.</p>
+
+<p id="progress"></p>
+
+<table id="results"></table>
+
+<p id="summary"></p>
+
+<script>
+const WORKERS = 8;
+const PER_WORKER = 500;
+const MAX_PLY = 120;
+
+const progress = document.getElementById('progress');
+const results = document.getElementById('results');
+const summary = document.getElementById('summary');
+
+let tested = 0;
+let failed = 0;
+let finished = 0;
+
+// seeded so a run is repeatable
+let seed = 4321;
+
+function rand(n) {
+  seed ^= seed << 13;
+  seed ^= seed >>> 17;
+  seed ^= seed << 5;
+  return (seed >>> 0) % n;
+}
+
+function swapCase(s) {
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    out += c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase();
+  }
+  return out;
+}
+
+// fen from the printed board rows (rank 8 first), the stm and the rights
+function makeFen(rows, stm, rights) {
+  let fen = '';
+  for (let r = 0; r < 8; r++) {
+    let empty = 0;
+    for (let f = 0; f < 8; f++) {
+      if (rows[r][f] === '.') {
+        empty++;
+      }
+      else {
+        fen += (empty ? empty : '') + rows[r][f];
+        empty = 0;
+      }
+    }
+    fen += (empty ? empty : '') + (r < 7 ? '/' : '');
+  }
+  return fen + ' ' + stm[0] + ' ' + rights + ' - 0 1';
+}
+
+function flip(w) {
+  const rows = [];
+  for (let r = 7; r >= 0; r--)
+    rows.push(swapCase(w.rows[r].join('')).split(''));
+  return makeFen(rows, w.stm === 'white' ? 'black' : 'white', swapCase(w.rights));
+}
+
+function play(w) {
+  w.rows = [];
+  w.evals = [];
+  w.worker.postMessage('position startpos moves ' + w.moves.join(' '));
+  w.worker.postMessage('board');
+  w.worker.postMessage('eval');
+}
+
+function onMessage(w, line) {
+  const row = line.match(/^([1-8])  ((?:[rnbqkpRNBQKP.] ){8})$/);
+  if (row) {
+    w.rows[8 - parseInt(row[1])] = row[2].trim().split(' ');
+  }
+  else if (line.startsWith('stm: ')) {
+    w.stm = line.slice(5);
+  }
+  else if (line.startsWith('rights: ')) {
+    w.rights = line.slice(8);
+  }
+  else if (/^-?\d+$/.test(line)) {
+    w.evals.push(parseInt(line));
+    if (w.evals.length === 1) {
+      // the original is in, now the flip, then carry on the game
+      w.fen = makeFen(w.rows, w.stm, w.rights);
+      w.flipped = flip(w);
+      w.worker.postMessage('position fen ' + w.flipped);
+      w.worker.postMessage('eval');
+    }
+    else {
+      tested++;
+      if (w.evals[0] !== w.evals[1]) {
+        failed++;
+        if (!results.rows.length)
+          results.innerHTML = '<tr><th>fen</th><th>eval</th><th>flipped</th><th>eval</th></tr>';
+        results.insertRow().innerHTML = '<td>' + w.fen + '</td><td>' + w.evals[0] + '</td><td>' + w.flipped + '</td><td>' + w.evals[1] + '</td>';
+      }
+      progress.textContent = tested + ' positions, ' + failed + ' failed';
+      if (++w.count >= PER_WORKER) {
+        w.worker.terminate();
+        if (++finished === WORKERS)
+          summary.textContent = (tested - failed) + ' of ' + tested + ' positions eval the same when colour flipped';
+        return;
+      }
+      w.worker.postMessage('position startpos moves ' + w.moves.join(' '));
+      w.worker.postMessage('moves');
+    }
+  }
+  else if (line === 'checkmate' || line === 'stalemate') {
+    w.moves = [];
+    play(w);
+  }
+  else if (/^([a-h][1-8][a-h][1-8][qrbn]? ?)+$/.test(line)) {
+    const legal = line.split(' ');
+    if (w.moves.length >= MAX_PLY)
+      w.moves = [];
+    else
+      w.moves.push(legal[rand(legal.length)]);
+    play(w);
+  }
+}
+
+for (let i = 0; i < WORKERS; i++) {
+  const w = {worker: new Worker('../naddu.js'), moves: [], rows: [], evals: [], count: 0, stm: 'white', rights: '-', fen: '', flipped: ''};
+  w.worker.onmessage = function(e) { onMessage(w, e.data); };
+  play(w);
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,5 @@
+releases/*
+fastchess
+sprt.pgn
+config.json
+*.epd

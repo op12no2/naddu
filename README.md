@@ -1,0 +1,90 @@
+# Naddu
+
+Naddu is a basic Javascript UCI chess engine.
+
+It can be easily included in your web pages.
+
+All you need is `naddu.js` from the repo root.
+
+## Hello world
+
+```
+const naddu = new Worker('naddu.js');
+const ucioutput = document.getElementById('ucioutput');
+
+naddu.onmessage = function(e) {
+  ucioutput.textContent += e.data + '\n'; // naddu reponds with text as per UCI 
+};
+
+naddu.postMessage('uci');
+naddu.postMessage('ucinewgame');
+naddu.postMessage('position startpos');
+naddu.postMessage('board');
+naddu.postMessage('eval');
+naddu.postMessage('go depth 8');
+naddu.postMessage('go movetime 1000')
+```
+
+Try this example here: https://op12no2.github.io/naddu/examples/hello_world.html
+
+## More examples
+
+- [mates](https://op12no2.github.io/naddu/examples/mates.html) - finds mates and checks the reported mate distance.
+- [console](https://op12no2.github.io/naddu/examples/console.html) - a console, type UCI commands and see the replies, `?` lists them.
+- [play](https://op12no2.github.io/naddu/examples/play.html) - play against Naddu at five strength levels, or watch Naddu play itself.
+- [endgames](https://op12no2.github.io/naddu/examples/endgames.html) - plays out random K+Q v K and K+R v K positions and checks white mates.
+- [analysis](https://op12no2.github.io/naddu/examples/analysis.html) - set up a position by dragging pieces, presets or FEN, then analyse it.
+- [openings](https://op12no2.github.io/naddu/examples/openings.html) - twenty workers search each first move deeper and deeper, then rank them.
+- [perft](https://op12no2.github.io/naddu/examples/perft.html) - move generator node counts against the known values, plus your own.
+- [bk](https://op12no2.github.io/naddu/examples/bk.html) - the Bratko-Kopec test at a search time of your choice.
+- [symmetry](https://op12no2.github.io/naddu/examples/symmetry.html) - eight workers play random games and check every position evals the same when colour flipped.
+
+## UCI protocol
+
+Naddu implements the following [UCI](https://backscattering.de/chess/uci/) commands: `uci`, `uciok`, `isready`, `readyok`, `ucinewgame|u`, `setoption`, `position|p`, `go|g` and `quit|q`.
+
+Note that `quit` will wait for a search to finish because Javascript is single-threaded. To stop a search early, simply kill the worker and create a new one.
+
+```
+naddu.terminate();
+naddu = new Worker('naddu.js');
+```
+
+## UCI extensions
+
+- `board|b` - show the current position.
+- `moves|m` - list the legal moves, or `checkmate` or `stalemate` if there are none.
+- `eval|e` - static eval of the current position from the side to move's perspective.
+- `perft|f <depth>` - leaf node count.
+- `bench|h` - search 50 positions, report nodes and nps.
+- `help|?` - list commands.
+
+## Command line
+
+Naddu can also be started from a command line using `Node` or `Bun`:-
+
+```
+node naddu.js
+```
+
+Or give it commands:-
+
+```
+bun naddu.js uci ucinewgame "position startpos" "go depth 8"
+```
+
+## Creating binaries
+
+You can create executables using `Bun`:-
+
+```
+bun build naddu.js --compile --minify --target=bun-windows-x64   --outfile=naddu-win-x64
+bun build naddu.js --compile --minify --target=bun-windows-arm64 --outfile=naddu-win-arm64
+bun build naddu.js --compile --minify --target=bun-linux-x64     --outfile=naddu-linux-x64
+bun build naddu.js --compile --minify --target=bun-linux-arm64   --outfile=naddu-linux-arm64
+bun build naddu.js --compile --minify --target=bun-darwin-x64    --outfile=naddu-mac-x64
+bun build naddu.js --compile --minify --target=bun-darwin-arm64  --outfile=naddu-mac-arm64
+```
+
+The Linux arm64 binary runs on a Raspberry Pi 3 or later with a 64-bit OS. Add `-musl` to
+the Linux targets for Alpine. 

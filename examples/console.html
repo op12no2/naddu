@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Console</title>
+<style>
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: #111;
+    color: #ddd;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 14px;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    max-width: 60em;
+    margin: 0 auto;
+    padding: 1em;
+    box-sizing: border-box;
+  }
+  #output {
+    flex: 1;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    margin: 0;
+  }
+  #output .cmd {
+    color: #8f8;
+  }
+  #output .board .rank, #output .board .sq {
+    display: inline-block;
+    width: 22px;
+    text-align: center;
+  }
+  #output .board .sq {
+    font-size: 18px;
+  }
+  #prompt {
+    display: flex;
+    margin-top: 0.5em;
+  }
+  #prompt span {
+    color: #8f8;
+    padding-right: 0.5em;
+  }
+  #input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: #ddd;
+    font: inherit;
+  }
+</style>
+</head>
+<body>
+
+<pre id="output"></pre>
+
+<div id="prompt">
+  <span>&gt;</span>
+  <input id="input" autofocus autocomplete="off" spellcheck="false">
+</div>
+
+<script>
+const naddu = new Worker('../naddu.js');
+const output = document.getElementById('output');
+const input = document.getElementById('input');
+
+const history = [];
+let historyIndex = 0;
+
+// board rows from the engine look like "8  r n b q k b n r", show them with unicode pieces
+// each square is a fixed width cell because the glyphs are wider than the file labels
+const PIECES = {
+  K: '\u2654', Q: '\u2655', R: '\u2656', B: '\u2657', N: '\u2658', P: '\u2659',
+  k: '\u265A', q: '\u265B', r: '\u265C', b: '\u265D', n: '\u265E', p: '\u265F',
+  '.': '\u00B7'
+};
+
+function cell(line, text, cls) {
+  const span = document.createElement('span');
+  span.className = cls;
+  span.textContent = text;
+  line.appendChild(span);
+}
+
+function boardRow(line, text) {
+  const isRow = /^[1-8]  ([rnbqkpRNBQKP.] ){8}$/.test(text);
+  const isFiles = /^   a b c d e f g h$/.test(text);
+  if (!isRow && !isFiles)
+    return false;
+  line.className = 'board';
+  cell(line, isRow ? text[0] : '', 'rank');
+  const squares = text.slice(3).trim().split(' ');
+  for (let i = 0; i < 8; i++)
+    cell(line, isRow ? PIECES[squares[i]] : squares[i], 'sq');
+  return true;
+}
+
+function write(text, cls) {
+  const line = document.createElement('div');
+  if (cls)
+    line.className = cls;
+  if (!boardRow(line, text))
+    line.textContent = text || '\u00A0'; // empty divs have no height
+  output.appendChild(line);
+  output.scrollTop = output.scrollHeight;
+}
+
+function send(cmd) {
+  write('> ' + cmd, 'cmd');
+  naddu.postMessage(cmd);
+}
+
+naddu.onmessage = function(e) {
+  write(e.data);
+};
+
+input.onkeydown = function(e) {
+  if (e.key === 'Enter') {
+    const cmd = input.value.trim();
+    input.value = '';
+    if (cmd) {
+      history.push(cmd);
+      historyIndex = history.length;
+      send(cmd);
+    }
+  }
+  else if (e.key === 'ArrowUp') {
+    if (historyIndex > 0)
+      input.value = history[--historyIndex];
+    e.preventDefault();
+  }
+  else if (e.key === 'ArrowDown') {
+    input.value = historyIndex < history.length - 1 ? history[++historyIndex] : '';
+    if (historyIndex >= history.length - 1)
+      historyIndex = history.length;
+    e.preventDefault();
+  }
+};
+
+document.body.onclick = function() {
+  input.focus();
+};
+
+send('uci');
+send('?');
+</script>
+
+</body>
+</html>
