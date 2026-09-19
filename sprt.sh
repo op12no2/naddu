@@ -6,10 +6,11 @@
 # ELO0=-5 ELO1=0 for a non regression test, GAMES=500 for a fixed length match with no sprt (a gauge),
 # or BASE=/path/to/engine to play another uci engine, a binary or a .js engine which is compiled with bun
 # like naddu, e.g. BASE=~/engines/lozza9.js
+# e.g. GAMES=200 BASE=../engines/stash18 ./sprt.sh
 
 set -e
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")"
 
 if pgrep -f "./fastchess -engine" > /dev/null; then
   echo "a match is already running"
@@ -62,5 +63,5 @@ rm -f $pgn
   -draw movenumber=40 movecount=8 score=10 \
   -resign movecount=5 score=400 \
   -pgnout file=$pgn append=false \
-  -ratinginterval 50 \
+  -ratinginterval 10 \
   "$@"
