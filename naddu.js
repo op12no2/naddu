@@ -176,13 +176,12 @@ function position(fen, moves) {
 
   zobRebuild(pos);
   repClear();
-  repPush(pos);
 
   // Apply moves if provided
   if (moves && moves.length > 0) {
     for (let i = 0; i < moves.length; i++) {
-      doMove(moves[i]);
       repPush(pos);
+      doMove(moves[i]);
     }
   }
 
@@ -382,7 +381,7 @@ function isRepetition(pos, ply) {
 
   // Step back by 2 (same side to move)
   // Start at currentPly - 2 (the position 2 plies ago)
-  for (let i = 2; i <= lookback; i += 2) {
+  for (let i = 4; i <= lookback; i += 2) {
     const idx = (currentPly - i) * 2;
     if (repHistory[idx] === hashLo && repHistory[idx + 1] === hashHi) {
       // Found once in game history = can force 3-fold (2-fold rule)
