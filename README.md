@@ -2,11 +2,13 @@
 
 Naddu is a basic Javascript UCI chess engine.
 
-It can be easily included in your web pages.
+It can be easily deployed in your web pages.
 
 All you need is `naddu.js` from the repo root.
 
 Strength is around 2500 Elo.
+
+All evaluation and search parameters are configurable; search for `config start` in the source.
 
 ## Hello world
 
